@@ -1,0 +1,810 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
+<title>Cofre — Control financiero personal</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🌱</text></svg>">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          ink: { 900:'#0F1F19', 800:'#16281F', 700:'#1E3A2C' },
+          moss: { 50:'#F2F6F2', 100:'#E3ECE4', 200:'#C4D8C7', 300:'#9EBFA3', 400:'#6E9C77', 500:'#3F7A50', 600:'#2E6140', 700:'#204B32', 800:'#1B4332', 900:'#123024' },
+          gold: { 50:'#FBF6E9', 100:'#F4E7BE', 300:'#E2C05C', 500:'#C9A227', 600:'#A8841C', 700:'#846613' },
+          clay: { 50:'#FDF2F1', 100:'#FADCD9', 400:'#E27065', 500:'#D14A3C', 600:'#B23A2E' },
+          sand: '#F6F5F1'
+        },
+        fontFamily: {
+          serif: ['"Fraunces"','serif'],
+          sans: ['"Inter"','sans-serif']
+        }
+      }
+    }
+  }
+</script>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/alpinejs/3.13.5/cdn.min.js" defer></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+<style>
+  :root{ color-scheme: light; }
+  html,body{ font-family:'Inter',sans-serif; background:#F6F5F1; }
+  .font-serif{ font-family:'Fraunces',serif; }
+  ::-webkit-scrollbar{ width:8px; height:8px; }
+  ::-webkit-scrollbar-thumb{ background:#C4D8C7; border-radius:8px; }
+  [x-cloak]{ display:none !important; }
+
+  .card{
+    background:#fff;
+    border:1px solid #E3ECE4;
+    border-radius:14px;
+  }
+  .stat-number{ font-variant-numeric: tabular-nums; }
+  .amount-input{ font-variant-numeric: tabular-nums; }
+
+  .tab-underline{
+    position:relative;
+  }
+  .tab-underline::after{
+    content:"";
+    position:absolute; left:0; right:0; bottom:-1px; height:2px;
+    background:#1B4332; transform:scaleX(0); transition:transform .25s ease;
+  }
+  .tab-underline.active::after{ transform:scaleX(1); }
+
+  .chat-scroll{ scroll-behavior:smooth; }
+
+  .bubble-user{ background:#1B4332; color:#F2F6F2; border-radius:16px 16px 4px 16px; }
+  .bubble-system{ background:#fff; border:1px solid #E3ECE4; border-radius:16px 16px 16px 4px; }
+
+  .progress-track{ background:#E3ECE4; border-radius:999px; overflow:hidden; }
+  .progress-fill{ transition: width .5s ease, background-color .3s ease; border-radius:999px; }
+
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button{ -webkit-appearance:none; margin:0; }
+  input[type="number"]{ -moz-appearance:textfield; }
+
+  .fade-in{ animation: fadeIn .25s ease both; }
+  @keyframes fadeIn{ from{ opacity:0; transform:translateY(4px);} to{opacity:1; transform:translateY(0);} }
+
+  .pin-dot{ width:14px; height:14px; border-radius:999px; border:2px solid #1B4332; }
+  .pin-dot.filled{ background:#1B4332; }
+</style>
+</head>
+<body class="min-h-screen text-ink-900 antialiased" x-data="app()" x-init="init()" x-cloak>
+
+<!-- ===================== LOCK SCREEN ===================== -->
+<template x-if="locked">
+  <div class="fixed inset-0 z-50 bg-moss-900 flex flex-col items-center justify-center px-6 text-moss-50">
+    <div class="text-4xl mb-2">🌱</div>
+    <h1 class="font-serif text-2xl mb-1">Cofre está bloqueado</h1>
+    <p class="text-moss-200 text-sm mb-8">Ingresa tu PIN para continuar</p>
+    <div class="flex gap-3 mb-8">
+      <template x-for="i in 4" :key="i">
+        <div class="pin-dot" :class="pinInput.length >= i ? 'filled' : ''"></div>
+      </template>
+    </div>
+    <div class="grid grid-cols-3 gap-3 w-64">
+      <template x-for="n in [1,2,3,4,5,6,7,8,9]" :key="n">
+        <button @click="pressPin(n)" class="h-16 rounded-2xl bg-moss-800 hover:bg-moss-700 active:scale-95 transition text-xl font-medium" x-text="n"></button>
+      </template>
+      <button @click="pinInput=''" class="h-16 rounded-2xl text-sm text-moss-300 hover:text-white">Borrar</button>
+      <button @click="pressPin(0)" class="h-16 rounded-2xl bg-moss-800 hover:bg-moss-700 active:scale-95 transition text-xl font-medium">0</button>
+      <button @click="pinInput = pinInput.slice(0,-1)" class="h-16 rounded-2xl text-sm text-moss-300 hover:text-white">⌫</button>
+    </div>
+    <p x-show="pinError" x-cloak class="text-clay-400 text-sm mt-6">PIN incorrecto, intenta de nuevo</p>
+    <button @click="locked=false" class="mt-10 text-xs text-moss-400 underline">Olvidé mi PIN (reiniciar bloqueo)</button>
+  </div>
+</template>
+
+<!-- ===================== APP SHELL ===================== -->
+<div class="max-w-6xl mx-auto pb-28 md:pb-10" :class="locked ? 'pointer-events-none blur-sm select-none' : ''">
+
+  <!-- Header -->
+  <header class="px-5 pt-6 pb-4 md:px-8">
+    <div class="flex items-start justify-between">
+      <div>
+        <p class="text-xs uppercase tracking-wide text-moss-500 font-semibold mb-1">Cofre</p>
+        <h1 class="font-serif text-2xl md:text-3xl text-ink-900">Hola 👋, así va tu mes</h1>
+      </div>
+      <button @click="showSettings=true" class="w-10 h-10 rounded-full card flex items-center justify-center text-lg hover:bg-moss-50">⚙️</button>
+    </div>
+
+    <!-- Hero: dinero real disponible -->
+    <div class="mt-5 card p-5 md:p-6 relative overflow-hidden">
+      <div class="absolute -right-8 -top-8 w-32 h-32 rounded-full bg-moss-100 opacity-60"></div>
+      <p class="text-sm text-moss-600 font-medium relative">Dinero real para terminar el mes</p>
+      <p class="font-serif text-4xl md:text-5xl text-ink-900 mt-1 relative stat-number" x-text="formatMoney(dineroReal())"></p>
+      <p class="text-xs text-moss-500 mt-2 relative">
+        Sin contar <span class="font-semibold text-gold-600" x-text="formatMoney(totalGoals())"></span> guardado en metas intocables
+      </p>
+    </div>
+
+    <!-- Daily reminder banner -->
+    <div x-show="showReminder" x-cloak x-transition class="mt-3 flex items-center justify-between gap-3 bg-gold-50 border border-gold-100 rounded-xl px-4 py-3">
+      <p class="text-sm text-gold-700">🔔 ¿Ya registraste los movimientos de hoy? Un buen hábito diario mantiene tus números reales.</p>
+      <div class="flex items-center gap-2 shrink-0">
+        <button @click="activeTab='chat'; showReminder=false" class="text-xs font-semibold text-moss-700 bg-white px-3 py-1.5 rounded-lg border border-moss-200 hover:bg-moss-50">Registrar</button>
+        <button @click="showReminder=false" class="text-gold-500 hover:text-gold-700 text-sm px-1">✕</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Tabs (desktop) -->
+  <nav class="hidden md:flex gap-6 px-8 border-b border-moss-100 sticky top-0 bg-sand/90 backdrop-blur z-20">
+    <button @click="activeTab='saldos'" class="tab-underline py-3 text-sm font-semibold" :class="[activeTab==='saldos' ? 'active text-ink-900' : 'text-moss-400 hover:text-moss-600']">💰 Saldos y dinero disponible</button>
+    <button @click="activeTab='chat'" class="tab-underline py-3 text-sm font-semibold" :class="[activeTab==='chat' ? 'active text-ink-900' : 'text-moss-400 hover:text-moss-600']">💬 Chat de movimientos</button>
+    <button @click="activeTab='reportes'" class="tab-underline py-3 text-sm font-semibold" :class="[activeTab==='reportes' ? 'active text-ink-900' : 'text-moss-400 hover:text-moss-600']">📊 Gastos, alertas y reportes</button>
+  </nav>
+
+  <!-- ===================== TAB 1: SALDOS ===================== -->
+  <section x-show="activeTab==='saldos'" x-cloak class="px-5 md:px-8 pt-6 space-y-6 fade-in">
+
+    <!-- Resumen financiero -->
+    <div class="grid grid-cols-3 gap-3">
+      <div class="card p-4">
+        <p class="text-xs text-moss-500 font-medium">Dinero total</p>
+        <p class="font-serif text-lg md:text-2xl mt-1 text-ink-900 stat-number" x-text="formatMoney(totalMoney())"></p>
+      </div>
+      <div class="card p-4 border-clay-100">
+        <p class="text-xs text-clay-500 font-medium">Gastos pendientes</p>
+        <p class="font-serif text-lg md:text-2xl mt-1 text-clay-500 stat-number" x-text="formatMoney(totalPending())"></p>
+      </div>
+      <div class="card p-4 bg-moss-800 border-moss-800">
+        <p class="text-xs text-moss-200 font-medium">Real disponible</p>
+        <p class="font-serif text-lg md:text-2xl mt-1 text-white stat-number" x-text="formatMoney(dineroReal())"></p>
+      </div>
+    </div>
+
+    <!-- Cuentas -->
+    <div>
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="font-serif text-lg">Cuentas y efectivo</h2>
+        <span class="text-xs text-moss-400" x-text="accounts.length + ' casillas'"></span>
+      </div>
+      <div class="grid sm:grid-cols-2 gap-3">
+        <template x-for="acc in accounts" :key="acc.id">
+          <div class="card p-4 flex items-center gap-3">
+            <span class="text-xl" x-text="acc.icon || '🏦'"></span>
+            <div class="flex-1 min-w-0">
+              <input type="text" x-model="acc.name" @change="save()" class="w-full text-sm font-semibold bg-transparent focus:outline-none focus:bg-moss-50 rounded px-1 -mx-1">
+              <div class="flex items-center gap-1 mt-0.5">
+                <span class="text-moss-400 text-sm">$</span>
+                <input type="number" step="0.01" x-model.number="acc.amount" @change="save()" class="w-full amount-input text-base text-moss-700 bg-transparent focus:outline-none focus:bg-moss-50 rounded px-1 -mx-1">
+              </div>
+            </div>
+            <button @click="removeAccount(acc.id)" class="text-moss-300 hover:text-clay-500 text-sm shrink-0">✕</button>
+          </div>
+        </template>
+      </div>
+
+      <!-- Add account -->
+      <div class="mt-3">
+        <button x-show="!showAddAccount" @click="showAddAccount=true" class="w-full card border-dashed py-3 text-sm text-moss-500 hover:text-moss-700 hover:bg-moss-50 font-medium">+ Agregar casilla</button>
+        <div x-show="showAddAccount" x-cloak class="card p-4 flex flex-col sm:flex-row gap-2">
+          <input type="text" x-model="newAccName" placeholder="Nombre (ej. Tarjeta BBVA)" class="flex-1 border border-moss-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-moss-400">
+          <input type="number" x-model.number="newAccAmount" placeholder="Monto" class="w-full sm:w-32 border border-moss-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-moss-400">
+          <div class="flex gap-2">
+            <button @click="addAccount()" class="px-4 py-2 bg-moss-800 text-white rounded-lg text-sm font-semibold hover:bg-moss-700">Guardar</button>
+            <button @click="showAddAccount=false; newAccName=''; newAccAmount=null" class="px-3 py-2 text-moss-400 text-sm">Cancelar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Gastos pendientes -->
+    <div>
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="font-serif text-lg">Gastos pendientes</h2>
+        <span class="text-xs text-moss-400">Cuentas por pagar que ya comprometiste</span>
+      </div>
+      <div class="grid sm:grid-cols-2 gap-3">
+        <template x-for="p in pendings" :key="p.id">
+          <div class="card p-4 flex items-center gap-3 border-clay-100">
+            <span class="text-xl">🧾</span>
+            <div class="flex-1 min-w-0">
+              <input type="text" x-model="p.name" @change="save()" class="w-full text-sm font-semibold bg-transparent focus:outline-none focus:bg-clay-50 rounded px-1 -mx-1">
+              <div class="flex items-center gap-1 mt-0.5">
+                <span class="text-clay-400 text-sm">$</span>
+                <input type="number" step="0.01" x-model.number="p.amount" @change="save()" class="w-full amount-input text-base text-clay-500 bg-transparent focus:outline-none focus:bg-clay-50 rounded px-1 -mx-1">
+              </div>
+            </div>
+            <button @click="removePending(p.id)" class="text-moss-300 hover:text-clay-500 text-sm shrink-0">✕</button>
+          </div>
+        </template>
+      </div>
+      <div class="mt-3">
+        <button x-show="!showAddPending" @click="showAddPending=true" class="w-full card border-dashed py-3 text-sm text-moss-500 hover:text-moss-700 hover:bg-moss-50 font-medium">+ Agregar gasto pendiente</button>
+        <div x-show="showAddPending" x-cloak class="card p-4 flex flex-col sm:flex-row gap-2">
+          <input type="text" x-model="newPendingName" placeholder="Ej. Renta, Internet" class="flex-1 border border-moss-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-moss-400">
+          <input type="number" x-model.number="newPendingAmount" placeholder="Monto" class="w-full sm:w-32 border border-moss-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-moss-400">
+          <div class="flex gap-2">
+            <button @click="addPending()" class="px-4 py-2 bg-clay-500 text-white rounded-lg text-sm font-semibold hover:bg-clay-600">Guardar</button>
+            <button @click="showAddPending=false; newPendingName=''; newPendingAmount=null" class="px-3 py-2 text-moss-400 text-sm">Cancelar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Metas de ahorro -->
+    <div class="pb-6">
+      <div class="flex items-center justify-between mb-1">
+        <h2 class="font-serif text-lg">Metas de ahorro 🔒</h2>
+      </div>
+      <p class="text-xs text-moss-500 mb-3">Este dinero se resta de tu disponible para que no lo gastes por error.</p>
+      <div class="grid sm:grid-cols-2 gap-3">
+        <template x-for="g in goals" :key="g.id">
+          <div class="card p-4 flex items-center gap-3 bg-gold-50 border-gold-100">
+            <span class="text-xl">🎯</span>
+            <div class="flex-1 min-w-0">
+              <input type="text" x-model="g.name" @change="save()" class="w-full text-sm font-semibold bg-transparent focus:outline-none rounded px-1 -mx-1">
+              <div class="flex items-center gap-1 mt-0.5">
+                <span class="text-gold-600 text-sm">$</span>
+                <input type="number" step="0.01" x-model.number="g.amount" @change="save()" class="w-full amount-input text-base text-gold-700 bg-transparent focus:outline-none rounded px-1 -mx-1">
+              </div>
+            </div>
+            <button @click="removeGoal(g.id)" class="text-moss-300 hover:text-clay-500 text-sm shrink-0">✕</button>
+          </div>
+        </template>
+      </div>
+      <div class="mt-3">
+        <button x-show="!showAddGoal" @click="showAddGoal=true" class="w-full card border-dashed py-3 text-sm text-gold-600 hover:bg-gold-50 font-medium">+ Agregar meta de ahorro</button>
+        <div x-show="showAddGoal" x-cloak class="card p-4 flex flex-col sm:flex-row gap-2">
+          <input type="text" x-model="newGoalName" placeholder="Ej. Fondo de emergencia" class="flex-1 border border-moss-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-moss-400">
+          <input type="number" x-model.number="newGoalAmount" placeholder="Monto" class="w-full sm:w-32 border border-moss-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-moss-400">
+          <div class="flex gap-2">
+            <button @click="addGoal()" class="px-4 py-2 bg-gold-500 text-white rounded-lg text-sm font-semibold hover:bg-gold-600">Guardar</button>
+            <button @click="showAddGoal=false; newGoalName=''; newGoalAmount=null" class="px-3 py-2 text-moss-400 text-sm">Cancelar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== TAB 2: CHAT ===================== -->
+  <section x-show="activeTab==='chat'" x-cloak class="px-5 md:px-8 pt-6 fade-in">
+    <div class="card flex flex-col h-[70vh] md:h-[65vh] overflow-hidden">
+
+      <div class="px-4 py-3 border-b border-moss-100 flex items-center justify-between">
+        <div>
+          <p class="font-serif text-lg">Cuéntame qué pasó con tu dinero</p>
+          <p class="text-xs text-moss-400">Ej. "Me pagaron 1000 por San Jorge a Klar" o "Gasté 340 en comida y 600 en recibos"</p>
+        </div>
+        <button x-show="lastBatch" @click="undoLast()" class="text-xs font-semibold text-clay-500 border border-clay-200 rounded-lg px-3 py-1.5 hover:bg-clay-50 shrink-0 ml-2">↩ Deshacer último</button>
+      </div>
+
+      <div class="flex-1 overflow-y-auto chat-scroll px-4 py-4 space-y-3" x-ref="chatBox">
+        <template x-for="(m,i) in chatMessages" :key="i">
+          <div class="flex" :class="m.from==='user' ? 'justify-end' : 'justify-start'">
+            <div class="max-w-[85%] px-4 py-2.5 text-sm" :class="m.from==='user' ? 'bubble-user' : 'bubble-system'">
+              <p x-show="m.text" x-text="m.text" class="whitespace-pre-line"></p>
+              <template x-if="m.movements">
+                <div class="space-y-1.5 mt-1">
+                  <template x-for="mv in m.movements" :key="mv.id">
+                    <div class="flex items-center gap-2 text-xs" :class="mv.type==='income' ? 'text-moss-700' : 'text-clay-500'">
+                      <span x-text="mv.type==='income' ? '⬆️' : categoryIcon(mv.category)"></span>
+                      <span x-text="(mv.type==='income' ? '+ ' : '− ') + formatMoney(mv.amount)" class="font-semibold"></span>
+                      <span class="text-moss-400" x-text="mv.type==='income' ? ('a ' + mv.account) : (mv.category + ' · ' + mv.account)"></span>
+                    </div>
+                  </template>
+                </div>
+              </template>
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <form @submit.prevent="sendMessage()" class="border-t border-moss-100 p-3 flex gap-2">
+        <input type="text" x-model="chatInput" placeholder="Escribe tu movimiento…" class="flex-1 border border-moss-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-moss-400">
+        <button type="submit" class="w-11 h-11 rounded-xl bg-moss-800 text-white hover:bg-moss-700 flex items-center justify-center shrink-0">➤</button>
+      </form>
+    </div>
+  </section>
+
+  <!-- ===================== TAB 3: REPORTES ===================== -->
+  <section x-show="activeTab==='reportes'" x-cloak class="px-5 md:px-8 pt-6 pb-6 space-y-6 fade-in">
+
+    <!-- Categorías con alertas -->
+    <div>
+      <h2 class="font-serif text-lg mb-3">Gastos del mes por categoría</h2>
+      <div class="space-y-3">
+        <template x-for="cat in categories" :key="cat.name">
+          <div class="card p-4">
+            <div class="flex items-center justify-between mb-2">
+              <div class="flex items-center gap-2">
+                <span x-text="cat.icon"></span>
+                <span class="text-sm font-semibold" x-text="cat.name"></span>
+                <span class="text-xs px-2 py-0.5 rounded-full font-medium"
+                  :class="alertLevel(cat.name)==='red' ? 'bg-clay-100 text-clay-600' : (alertLevel(cat.name)==='yellow' ? 'bg-gold-100 text-gold-700' : 'bg-moss-100 text-moss-600')"
+                  x-text="alertLevel(cat.name)==='red' ? 'Límite superado' : (alertLevel(cat.name)==='yellow' ? 'Cerca del límite' : 'Bajo control')"></span>
+              </div>
+              <div class="text-sm text-right">
+                <span class="font-semibold stat-number" x-text="formatMoney(categoryTotal(cat.name))"></span>
+                <span class="text-moss-400"> / $</span>
+                <input type="number" x-model.number="budgets[cat.name]" @change="save()" class="w-16 text-moss-500 bg-transparent focus:outline-none border-b border-dashed border-moss-300 text-right">
+              </div>
+            </div>
+            <div class="progress-track h-2.5 w-full">
+              <div class="progress-fill h-full" :style="'width:' + Math.min(100, budgetPct(cat.name)) + '%'"
+                :class="alertLevel(cat.name)==='red' ? 'bg-clay-500' : (alertLevel(cat.name)==='yellow' ? 'bg-gold-500' : 'bg-moss-500')"></div>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+
+    <!-- Gráfica -->
+    <div class="card p-4">
+      <h2 class="font-serif text-lg mb-2">Comparativa: ¿en qué se va más tu dinero?</h2>
+      <div class="h-64">
+        <canvas x-ref="chartCanvas"></canvas>
+      </div>
+    </div>
+
+    <!-- Reporte Excel -->
+    <div class="card p-5">
+      <h2 class="font-serif text-lg mb-1">Generar reporte en Excel</h2>
+      <p class="text-xs text-moss-500 mb-4">Incluye resumen ejecutivo y el detalle de cada movimiento en el rango elegido.</p>
+      <div class="flex flex-col sm:flex-row gap-3 items-end">
+        <div class="flex-1 w-full">
+          <label class="text-xs text-moss-500 font-medium">Desde</label>
+          <input type="date" x-model="reportStart" class="w-full border border-moss-200 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none focus:border-moss-400">
+        </div>
+        <div class="flex-1 w-full">
+          <label class="text-xs text-moss-500 font-medium">Hasta</label>
+          <input type="date" x-model="reportEnd" class="w-full border border-moss-200 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none focus:border-moss-400">
+        </div>
+        <button @click="exportExcel()" class="w-full sm:w-auto px-5 py-2.5 bg-moss-800 text-white rounded-lg text-sm font-semibold hover:bg-moss-700 whitespace-nowrap">⬇ Descargar Excel</button>
+      </div>
+      <p x-show="exportMsg" x-text="exportMsg" class="text-xs text-moss-500 mt-2"></p>
+    </div>
+
+    <!-- Historial -->
+    <div>
+      <h2 class="font-serif text-lg mb-3">Historial de movimientos</h2>
+      <div class="card divide-y divide-moss-100 max-h-80 overflow-y-auto">
+        <template x-for="t in [...transactions].reverse()" :key="t.id">
+          <div class="px-4 py-3 flex items-center justify-between text-sm">
+            <div class="flex items-center gap-3">
+              <span x-text="t.type==='income' ? '⬆️' : categoryIcon(t.category)"></span>
+              <div>
+                <p class="font-medium" x-text="t.desc"></p>
+                <p class="text-xs text-moss-400" x-text="t.date + ' · ' + t.account + (t.type==='expense' ? (' · ' + t.category) : '')"></p>
+              </div>
+            </div>
+            <span class="font-semibold stat-number" :class="t.type==='income' ? 'text-moss-600' : 'text-clay-500'" x-text="(t.type==='income'?'+ ':'− ') + formatMoney(t.amount)"></span>
+          </div>
+        </template>
+        <p x-show="transactions.length===0" class="px-4 py-6 text-center text-sm text-moss-400">Aún no hay movimientos registrados. Ve al chat para empezar.</p>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- ===================== MOBILE TAB BAR ===================== -->
+<nav class="md:hidden fixed bottom-0 inset-x-0 bg-white border-t border-moss-100 flex z-30" :class="locked ? 'pointer-events-none' : ''">
+  <button @click="activeTab='saldos'" class="flex-1 py-3 flex flex-col items-center gap-0.5" :class="activeTab==='saldos' ? 'text-moss-800' : 'text-moss-300'">
+    <span class="text-lg">💰</span><span class="text-[10px] font-medium">Saldos</span>
+  </button>
+  <button @click="activeTab='chat'" class="flex-1 py-3 flex flex-col items-center gap-0.5" :class="activeTab==='chat' ? 'text-moss-800' : 'text-moss-300'">
+    <span class="text-lg">💬</span><span class="text-[10px] font-medium">Chat</span>
+  </button>
+  <button @click="activeTab='reportes'" class="flex-1 py-3 flex flex-col items-center gap-0.5" :class="activeTab==='reportes' ? 'text-moss-800' : 'text-moss-300'">
+    <span class="text-lg">📊</span><span class="text-[10px] font-medium">Reportes</span>
+  </button>
+</nav>
+
+<!-- ===================== SETTINGS MODAL ===================== -->
+<div x-show="showSettings" x-cloak x-transition class="fixed inset-0 z-40 bg-ink-900/40 flex items-end md:items-center justify-center" @click.self="showSettings=false">
+  <div class="bg-white rounded-t-2xl md:rounded-2xl w-full md:max-w-md p-5 max-h-[85vh] overflow-y-auto">
+    <div class="flex items-center justify-between mb-4">
+      <h3 class="font-serif text-lg">Ajustes</h3>
+      <button @click="showSettings=false" class="text-moss-400">✕</button>
+    </div>
+
+    <div class="flex items-center justify-between py-3 border-b border-moss-100">
+      <div>
+        <p class="text-sm font-medium">Bloqueo con PIN</p>
+        <p class="text-xs text-moss-400">Protege tu app con un PIN de 4 dígitos</p>
+      </div>
+      <button @click="togglePinSetup()" class="w-11 h-6 rounded-full transition relative" :class="pin ? 'bg-moss-700' : 'bg-moss-200'">
+        <span class="absolute top-0.5 w-5 h-5 rounded-full bg-white transition" :class="pin ? 'left-[22px]' : 'left-0.5'"></span>
+      </button>
+    </div>
+
+    <div x-show="settingUpPin" x-cloak class="py-3 border-b border-moss-100">
+      <p class="text-xs text-moss-500 mb-2">Crea un PIN de 4 dígitos</p>
+      <input type="password" maxlength="4" inputmode="numeric" x-model="newPin" placeholder="0000" class="w-full border border-moss-200 rounded-lg px-3 py-2 text-center tracking-[0.5em] focus:outline-none focus:border-moss-400">
+      <button @click="confirmPin()" class="mt-2 w-full bg-moss-800 text-white rounded-lg py-2 text-sm font-semibold hover:bg-moss-700">Guardar PIN</button>
+    </div>
+
+    <div class="flex items-center justify-between py-3 border-b border-moss-100">
+      <div>
+        <p class="text-sm font-medium">Recordatorio diario</p>
+        <p class="text-xs text-moss-400">Muestra un aviso para registrar tus gastos</p>
+      </div>
+      <button @click="remindersOn = !remindersOn; save()" class="w-11 h-6 rounded-full transition relative" :class="remindersOn ? 'bg-moss-700' : 'bg-moss-200'">
+        <span class="absolute top-0.5 w-5 h-5 rounded-full bg-white transition" :class="remindersOn ? 'left-[22px]' : 'left-0.5'"></span>
+      </button>
+    </div>
+
+    <button @click="if(confirm('¿Borrar todos los datos de esta app? Esta acción no se puede deshacer.')) resetAll()" class="w-full text-center text-sm text-clay-500 py-3 font-medium hover:bg-clay-50 rounded-lg mt-2">Borrar todos los datos</button>
+  </div>
+</div>
+
+<script>
+function app(){
+  return {
+    // ---------- state ----------
+    activeTab: 'saldos',
+    accounts: [],
+    pendings: [],
+    goals: [],
+    transactions: [],
+    budgets: {},
+    chatMessages: [],
+    chatInput: '',
+    lastBatch: null,
+
+    showAddAccount:false, newAccName:'', newAccAmount:null,
+    showAddPending:false, newPendingName:'', newPendingAmount:null,
+    showAddGoal:false, newGoalName:'', newGoalAmount:null,
+
+    showSettings:false,
+    pin:'', settingUpPin:false, newPin:'',
+    locked:false, pinInput:'', pinError:false,
+    remindersOn:true, showReminder:false,
+
+    reportStart:'', reportEnd:'', exportMsg:'',
+
+    categories: [
+      {name:'Comida', icon:'🍽️'},
+      {name:'Transporte', icon:'🚗'},
+      {name:'Recibos', icon:'🧾'},
+      {name:'Entretenimiento', icon:'🎬'},
+      {name:'Otros', icon:'📦'},
+    ],
+
+    chart:null,
+
+    // ---------- init ----------
+    init(){
+      const data = JSON.parse(localStorage.getItem('cofre_data') || 'null');
+      if(data){
+        this.accounts = data.accounts || [];
+        this.pendings = data.pendings || [];
+        this.goals = data.goals || [];
+        this.transactions = data.transactions || [];
+        this.budgets = data.budgets || {};
+        this.pin = data.pin || '';
+        this.remindersOn = data.remindersOn !== undefined ? data.remindersOn : true;
+        this.chatMessages = data.chatMessages || [];
+      } else {
+        this.accounts = [
+          {id: uid(), name:'Cuenta Banorte', amount:0, icon:'🏦'},
+          {id: uid(), name:'Cuenta Klar', amount:0, icon:'💳'},
+          {id: uid(), name:'Efectivo en cartera', amount:0, icon:'💵'},
+          {id: uid(), name:'Alcancía', amount:0, icon:'🐷'},
+          {id: uid(), name:'Dinero que me deben', amount:0, icon:'🤝'},
+        ];
+      }
+      ['Comida','Transporte','Recibos','Entretenimiento','Otros'].forEach(c=>{
+        if(this.budgets[c] === undefined) this.budgets[c] = 2000;
+      });
+
+      const today = new Date();
+      this.reportEnd = today.toISOString().slice(0,10);
+      this.reportStart = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0,10);
+
+      if(this.pin){ this.locked = true; }
+
+      const lastVisit = localStorage.getItem('cofre_last_visit');
+      const todayStr = today.toDateString();
+      if(this.remindersOn && lastVisit !== todayStr){ this.showReminder = true; }
+      localStorage.setItem('cofre_last_visit', todayStr);
+
+      if(this.chatMessages.length === 0){
+        this.chatMessages.push({from:'system', text:'¡Hola! Cuéntame tus movimientos en tus propias palabras y yo los organizo por ti. Por ejemplo: "Me pagaron 1500 de la chamba de San Jorge a Klar".'});
+      }
+
+      this.$watch('activeTab', v => { if(v==='reportes') this.$nextTick(()=>this.renderChart()); });
+      this.$nextTick(()=>{ if(this.activeTab==='reportes') this.renderChart(); });
+    },
+
+    save(){
+      localStorage.setItem('cofre_data', JSON.stringify({
+        accounts:this.accounts, pendings:this.pendings, goals:this.goals,
+        transactions:this.transactions, budgets:this.budgets, pin:this.pin,
+        remindersOn:this.remindersOn, chatMessages:this.chatMessages.slice(-60)
+      }));
+      this.renderChart();
+    },
+
+    // ---------- formatting ----------
+    formatMoney(n){
+      n = Number(n)||0;
+      return n.toLocaleString('es-MX', {style:'currency', currency:'MXN', maximumFractionDigits:2});
+    },
+    categoryIcon(cat){
+      const found = this.categories.find(c=>c.name===cat);
+      return found ? found.icon : '📦';
+    },
+
+    // ---------- computed ----------
+    totalMoney(){ return this.accounts.reduce((s,a)=> s + (Number(a.amount)||0), 0); },
+    totalPending(){ return this.pendings.reduce((s,p)=> s + (Number(p.amount)||0), 0); },
+    totalGoals(){ return this.goals.reduce((s,g)=> s + (Number(g.amount)||0), 0); },
+    dineroReal(){ return this.totalMoney() - this.totalPending() - this.totalGoals(); },
+
+    categoryTotal(cat){
+      const now = new Date();
+      return this.transactions
+        .filter(t=> t.type==='expense' && t.category===cat && sameMonth(t.date, now))
+        .reduce((s,t)=> s + Number(t.amount), 0);
+    },
+    budgetPct(cat){
+      const limit = Number(this.budgets[cat]) || 1;
+      return (this.categoryTotal(cat) / limit) * 100;
+    },
+    alertLevel(cat){
+      const pct = this.budgetPct(cat);
+      if(pct >= 90) return 'red';
+      if(pct >= 80) return 'yellow';
+      return 'green';
+    },
+
+    // ---------- accounts / pendings / goals CRUD ----------
+    addAccount(){
+      if(!this.newAccName || !this.newAccAmount) return;
+      this.accounts.push({id:uid(), name:this.newAccName, amount:Number(this.newAccAmount), icon:'🏦'});
+      this.newAccName=''; this.newAccAmount=null; this.showAddAccount=false;
+      this.save();
+    },
+    removeAccount(id){ this.accounts = this.accounts.filter(a=>a.id!==id); this.save(); },
+
+    addPending(){
+      if(!this.newPendingName || !this.newPendingAmount) return;
+      this.pendings.push({id:uid(), name:this.newPendingName, amount:Number(this.newPendingAmount)});
+      this.newPendingName=''; this.newPendingAmount=null; this.showAddPending=false;
+      this.save();
+    },
+    removePending(id){ this.pendings = this.pendings.filter(p=>p.id!==id); this.save(); },
+
+    addGoal(){
+      if(!this.newGoalName || !this.newGoalAmount) return;
+      this.goals.push({id:uid(), name:this.newGoalName, amount:Number(this.newGoalAmount)});
+      this.newGoalName=''; this.newGoalAmount=null; this.showAddGoal=false;
+      this.save();
+    },
+    removeGoal(id){ this.goals = this.goals.filter(g=>g.id!==id); this.save(); },
+
+    // ---------- chat / NLP ----------
+    sendMessage(){
+      const text = this.chatInput.trim();
+      if(!text) return;
+      this.chatMessages.push({from:'user', text});
+      this.chatInput = '';
+
+      const movements = this.parseText(text);
+      if(movements.length === 0){
+        this.chatMessages.push({from:'system', text:'No detecté un monto claro 🤔. Intenta algo como "Gasté 200 en comida" o "Me pagaron 800 a Klar".'});
+      } else {
+        movements.forEach(mv => this.applyMovement(mv));
+        this.lastBatch = movements;
+        this.chatMessages.push({from:'system', text:'Listo, registré esto:', movements});
+      }
+      this.save();
+      this.$nextTick(()=>{
+        const box = this.$refs.chatBox;
+        if(box) box.scrollTop = box.scrollHeight;
+      });
+    },
+
+    parseText(raw){
+      const text = raw.toLowerCase();
+      const incomeWords = ['me pagaron','pagaron','recibi','recibí','deposito','depósito','cobre','cobré','gane','gané','ingreso','sueldo','nomina','nómina','venta','vendi','vendí','deposit'];
+      const expenseWords = ['gaste','gasté','pague','pagué','compre','compré','gasto','se me fue','perdi','perdí'];
+      const categoryMap = {
+        'Comida': ['comida','restaurante','restaurant','super','mercado','antojo','cafe','café','desayuno','almuerzo','cena','tacos','pizza','food'],
+        'Transporte': ['uber','didi','gasolina','transporte','camion','camión','taxi','pasaje','metro','gas '],
+        'Recibos': ['recibo','luz','agua','internet','renta','telefono','teléfono','netflix','spotify','servicio','celular'],
+        'Entretenimiento': ['cine','pelicula','película','salida','fiesta','boleto','concierto','streaming','antro','bar','juego'],
+      };
+
+      let segments = text.split(/,+/).flatMap(seg=>{
+        const nums = seg.match(/\d+[.,]?\d*/g) || [];
+        if(nums.length > 1 && / y /.test(seg)) return seg.split(/ y /);
+        return [seg];
+      }).map(s=>s.trim()).filter(Boolean);
+
+      let lastType = null;
+      const movements = [];
+
+      segments.forEach(seg=>{
+        const numMatch = seg.match(/\d[\d,]*\.?\d*/);
+        if(!numMatch) return;
+        const amount = parseFloat(numMatch[0].replace(/,/g,''));
+        if(!amount || amount <= 0) return;
+
+        let type = null;
+        if(incomeWords.some(w=>seg.includes(w))) type = 'income';
+        else if(expenseWords.some(w=>seg.includes(w))) type = 'expense';
+        else type = lastType || 'expense';
+        lastType = type;
+
+        let account = null;
+        for(const acc of this.accounts){
+          const nameLower = acc.name.toLowerCase();
+          const shortName = nameLower.split(' ').pop();
+          if(seg.includes(nameLower) || (shortName.length>3 && seg.includes(shortName))){
+            account = acc.name; break;
+          }
+        }
+        if(!account){
+          if(seg.includes('efectivo') || seg.includes('cartera')) account = this.accounts.find(a=>/efectivo|cartera/i.test(a.name))?.name;
+          else if(seg.includes('alcanc')) account = this.accounts.find(a=>/alcanc/i.test(a.name))?.name;
+        }
+        if(!account) account = this.accounts[0] ? this.accounts[0].name : 'Efectivo';
+
+        let category = 'Otros';
+        if(type === 'expense'){
+          for(const [cat, words] of Object.entries(categoryMap)){
+            if(words.some(w=>seg.includes(w))){ category = cat; break; }
+          }
+        }
+
+        movements.push({
+          id: uid(), type, amount, account, category,
+          desc: seg.charAt(0).toUpperCase()+seg.slice(1),
+          date: new Date().toISOString().slice(0,10)
+        });
+      });
+
+      return movements;
+    },
+
+    applyMovement(mv){
+      const acc = this.accounts.find(a=>a.name===mv.account);
+      if(acc){
+        if(mv.type==='income') acc.amount = (Number(acc.amount)||0) + mv.amount;
+        else acc.amount = (Number(acc.amount)||0) - mv.amount;
+      }
+      this.transactions.push({
+        id: mv.id, date: mv.date, type: mv.type, amount: mv.amount,
+        account: mv.account, category: mv.type==='expense' ? mv.category : '', desc: mv.desc
+      });
+    },
+
+    undoLast(){
+      if(!this.lastBatch) return;
+      this.lastBatch.forEach(mv=>{
+        const acc = this.accounts.find(a=>a.name===mv.account);
+        if(acc){
+          if(mv.type==='income') acc.amount -= mv.amount;
+          else acc.amount += mv.amount;
+        }
+        this.transactions = this.transactions.filter(t=>t.id!==mv.id);
+      });
+      this.chatMessages.push({from:'system', text:'Deshice el último movimiento registrado.'});
+      this.lastBatch = null;
+      this.save();
+    },
+
+    // ---------- PIN ----------
+    togglePinSetup(){
+      if(this.pin){
+        if(confirm('¿Desactivar el bloqueo con PIN?')){ this.pin=''; this.save(); }
+      } else {
+        this.settingUpPin = true;
+      }
+    },
+    confirmPin(){
+      if(this.newPin.length !== 4 || !/^\d{4}$/.test(this.newPin)){ alert('El PIN debe tener 4 dígitos'); return; }
+      this.pin = this.newPin; this.newPin=''; this.settingUpPin=false;
+      this.save();
+    },
+    pressPin(n){
+      if(this.pinInput.length>=4) return;
+      this.pinInput += String(n);
+      if(this.pinInput.length===4){
+        if(this.pinInput === this.pin){ this.locked=false; this.pinInput=''; this.pinError=false; }
+        else { this.pinError=true; setTimeout(()=>{ this.pinInput=''; },400); }
+      }
+    },
+
+    resetAll(){
+      localStorage.removeItem('cofre_data');
+      localStorage.removeItem('cofre_last_visit');
+      location.reload();
+    },
+
+    // ---------- chart ----------
+    renderChart(){
+      if(!this.$refs.chartCanvas) return;
+      const labels = this.categories.map(c=>c.name);
+      const data = this.categories.map(c=>this.categoryTotal(c.name));
+      const colors = ['#3F7A50','#6E9C77','#C9A227','#E2C05C','#9EBFA3'];
+
+      if(this.chart){ this.chart.data.labels=labels; this.chart.data.datasets[0].data=data; this.chart.update(); return; }
+
+      this.chart = new Chart(this.$refs.chartCanvas.getContext('2d'), {
+        type:'bar',
+        data:{ labels, datasets:[{ data, backgroundColor:colors, borderRadius:8, maxBarThickness:46 }] },
+        options:{
+          responsive:true, maintainAspectRatio:false,
+          plugins:{ legend:{display:false}, tooltip:{ callbacks:{ label: ctx => this.formatMoney(ctx.raw) } } },
+          scales:{
+            y:{ beginAtZero:true, ticks:{ callback: v => '$'+v } , grid:{color:'#F2F6F2'} },
+            x:{ grid:{display:false} }
+          }
+        }
+      });
+    },
+
+    // ---------- excel export ----------
+    exportExcel(){
+      const start = new Date(this.reportStart+'T00:00:00');
+      const end = new Date(this.reportEnd+'T23:59:59');
+      const filtered = this.transactions.filter(t=>{
+        const d = new Date(t.date+'T12:00:00');
+        return d >= start && d <= end;
+      });
+
+      const totalIngresos = filtered.filter(t=>t.type==='income').reduce((s,t)=>s+Number(t.amount),0);
+      const totalGastos = filtered.filter(t=>t.type==='expense').reduce((s,t)=>s+Number(t.amount),0);
+      const ahorroNeto = totalIngresos - totalGastos;
+
+      const resumenSheetData = [
+        ['Reporte financiero — Cofre'],
+        ['Rango', this.reportStart + ' a ' + this.reportEnd],
+        [],
+        ['Ingresos totales', totalIngresos],
+        ['Gastos totales', totalGastos],
+        ['Ahorro neto', ahorroNeto],
+        [],
+        ['Generado el', new Date().toLocaleString('es-MX')]
+      ];
+
+      const movimientosSheetData = [
+        ['Fecha','Tipo','Monto','Categoría','Cuenta','Descripción']
+      ];
+      filtered.forEach(t=>{
+        movimientosSheetData.push([
+          t.date, t.type==='income' ? 'Ingreso' : 'Gasto', Number(t.amount),
+          t.category || '-', t.account, t.desc
+        ]);
+      });
+
+      const wb = XLSX.utils.book_new();
+      const wsResumen = XLSX.utils.aoa_to_sheet(resumenSheetData);
+      wsResumen['!cols'] = [{wch:22},{wch:28}];
+      const wsMov = XLSX.utils.aoa_to_sheet(movimientosSheetData);
+      wsMov['!cols'] = [{wch:12},{wch:10},{wch:12},{wch:16},{wch:20},{wch:36}];
+
+      XLSX.utils.book_append_sheet(wb, wsResumen, 'Resumen ejecutivo');
+      XLSX.utils.book_append_sheet(wb, wsMov, 'Movimientos');
+
+      XLSX.writeFile(wb, `reporte-financiero-${this.reportStart}_a_${this.reportEnd}.xlsx`);
+      this.exportMsg = `Se descargaron ${filtered.length} movimientos del rango seleccionado.`;
+      setTimeout(()=> this.exportMsg='', 4000);
+    },
+  }
+}
+
+function uid(){ return Math.random().toString(36).slice(2,10) + Date.now().toString(36); }
+function sameMonth(dateStr, ref){
+  const d = new Date(dateStr+'T12:00:00');
+  return d.getFullYear()===ref.getFullYear() && d.getMonth()===ref.getMonth();
+}
+</script>
+</body>
+</html>
