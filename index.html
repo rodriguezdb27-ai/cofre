@@ -242,7 +242,7 @@
           <p class="text-navy-300 text-sm mb-1.5">de 6 meses de meta</p>
         </div>
         <p class="text-xs text-navy-300 mt-2" x-show="mesesLibertad()===null">Define tus presupuestos esenciales en la pestaña Presupuesto para calcular esta cifra.</p>
-        <p class="text-xs text-navy-300 mt-2" x-show="mesesLibertad()!==null">Activos líquidos ÷ gastos operativos básicos, sin contar tu gasto aspiracional.</p>
+        <p class="text-xs text-navy-300 mt-2" x-show="mesesLibertad()!==null">Activos líquidos, menos tu deuda de tarjetas, ÷ gastos operativos básicos, sin contar tu gasto aspiracional.</p>
         <div class="progress-track h-2.5 w-full mt-4 bg-navy-700">
           <div class="progress-fill h-full bg-gold-500" :style="'width:' + libertadPct() + '%'"></div>
         </div>
@@ -259,10 +259,14 @@
     </div>
 
     <!-- Resumen financiero -->
-    <div class="grid grid-cols-3 gap-3">
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
       <div class="card p-4">
         <p class="text-xs text-navy-500 font-medium">Dinero total</p>
         <p class="font-serif text-lg md:text-2xl mt-1 text-ink-900 stat-number" x-text="formatMoney(totalMoney())"></p>
+      </div>
+      <div class="card p-4 border-clay-100 bg-clay-50" x-show="creditCards().length>0">
+        <p class="text-xs text-clay-600 font-medium">Deuda en tarjetas</p>
+        <p class="font-serif text-lg md:text-2xl mt-1 text-clay-600 stat-number" x-text="formatMoney(totalDebt())"></p>
       </div>
       <div class="card p-4 border-clay-100">
         <p class="text-xs text-clay-500 font-medium">Gastos pendientes</p>
@@ -273,6 +277,7 @@
         <p class="font-serif text-lg md:text-2xl mt-1 text-white stat-number" x-text="formatMoney(dineroReal())"></p>
       </div>
     </div>
+    <p class="text-xs text-navy-400" x-show="creditCards().length>0">El crédito disponible de tus tarjetas no es tuyo — por eso nunca se suma a tu dinero total ni a tu disponible real. Solo tu deuda cuenta aquí.</p>
 
     <!-- Cuentas -->
     <div>
@@ -304,6 +309,61 @@
           <div class="flex gap-2">
             <button @click="addAccount()" class="px-4 py-2 bg-navy-800 text-white rounded-lg text-sm font-semibold hover:bg-navy-700">Guardar</button>
             <button @click="showAddAccount=false; newAccName=''; newAccAmount=null" class="px-3 py-2 text-navy-400 text-sm">Cancelar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tarjetas de crédito -->
+    <div>
+      <div class="flex items-center justify-between mb-1">
+        <h2 class="font-serif text-lg">Tarjetas de crédito 💳</h2>
+      </div>
+      <p class="text-xs text-navy-500 mb-3">El crédito disponible es dinero prestado por el banco, no tuyo. Solo tu deuda actual afecta tus finanzas reales — así evitas la ilusión de liquidez.</p>
+      <div class="grid sm:grid-cols-2 gap-3">
+        <template x-for="c in creditCards()" :key="c.id">
+          <div class="card p-4 border-clay-200 bg-clay-50/50 relative overflow-hidden">
+            <div class="flex items-center gap-3">
+              <span class="text-xl">💳</span>
+              <div class="flex-1 min-w-0">
+                <input type="text" x-model="c.name" @change="save()" class="w-full text-sm font-semibold bg-transparent focus:outline-none rounded px-1 -mx-1 text-clay-700">
+                <p class="text-[11px] text-clay-500 mt-0.5">Pasivo — no es dinero disponible</p>
+              </div>
+              <button @click="removeAccount(c.id)" class="text-navy-300 hover:text-clay-600 text-sm shrink-0">✕</button>
+            </div>
+            <div class="grid grid-cols-2 gap-3 mt-3">
+              <div>
+                <p class="text-[10px] text-navy-400 uppercase font-semibold tracking-wide">Deuda actual</p>
+                <div class="flex items-center gap-1">
+                  <span class="text-clay-500 text-sm">$</span>
+                  <input type="number" step="0.01" x-model.number="c.debt" @change="save()" class="w-full amount-input text-base text-clay-600 bg-transparent focus:outline-none focus:bg-clay-50 rounded px-1 -mx-1">
+                </div>
+              </div>
+              <div>
+                <p class="text-[10px] text-navy-400 uppercase font-semibold tracking-wide">Límite de crédito</p>
+                <div class="flex items-center gap-1">
+                  <span class="text-navy-400 text-sm">$</span>
+                  <input type="number" step="0.01" x-model.number="c.limit" @change="save()" class="w-full amount-input text-base text-navy-600 bg-transparent focus:outline-none focus:bg-navy-50 rounded px-1 -mx-1">
+                </div>
+              </div>
+            </div>
+            <div class="progress-track h-2 w-full mt-3">
+              <div class="progress-fill h-full" :style="'width:' + Math.min(100, cardUtilization(c)) + '%'"
+                :class="cardAlertLevel(c)==='red' ? 'bg-clay-500' : (cardAlertLevel(c)==='yellow' ? 'bg-gold-500' : 'bg-navy-400')"></div>
+            </div>
+            <p class="text-[11px] text-navy-400 mt-1.5">Crédito disponible: <span class="font-semibold text-navy-600" x-text="formatMoney(cardAvailable(c))"></span> · <span x-text="cardUtilization(c).toFixed(0) + '% usado'"></span></p>
+          </div>
+        </template>
+      </div>
+      <div class="mt-3">
+        <button x-show="!showAddCard" @click="showAddCard=true" class="w-full card border-dashed border-clay-200 py-3 text-sm text-clay-600 hover:bg-clay-50 font-medium">+ Agregar tarjeta de crédito</button>
+        <div x-show="showAddCard" x-cloak class="card p-4 grid sm:grid-cols-4 gap-2">
+          <input type="text" x-model="newCardName" placeholder="Nombre (ej. Tarjeta Banorte)" class="sm:col-span-2 border border-navy-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-navy-400">
+          <input type="number" x-model.number="newCardLimit" placeholder="Límite de crédito" class="border border-navy-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-navy-400">
+          <input type="number" x-model.number="newCardDebt" placeholder="Deuda actual (opcional)" class="border border-navy-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-navy-400">
+          <div class="flex gap-2 sm:col-span-4">
+            <button @click="addCard()" class="px-4 py-2 bg-clay-500 text-white rounded-lg text-sm font-semibold hover:bg-clay-600">Guardar tarjeta</button>
+            <button @click="showAddCard=false; newCardName=''; newCardLimit=null; newCardDebt=null" class="px-3 py-2 text-navy-400 text-sm">Cancelar</button>
           </div>
         </div>
       </div>
@@ -418,10 +478,10 @@
               <template x-if="m.movements">
                 <div class="space-y-1.5 mt-1">
                   <template x-for="mv in m.movements" :key="mv.id">
-                    <div class="flex items-center gap-2 text-xs" :class="mv.type==='income' ? 'text-navy-700' : 'text-clay-500'">
-                      <span x-text="mv.type==='income' ? '⬆️' : categoryIcon(mv.category)"></span>
+                    <div class="flex items-center gap-2 text-xs" :class="mv.type==='income' ? 'text-navy-700' : (mv.type==='debt_payment' ? 'text-navy-600' : (mv.isCredit ? 'text-clay-600' : 'text-clay-500'))">
+                      <span x-text="mv.type==='income' ? '⬆️' : (mv.type==='debt_payment' ? '💳' : categoryIcon(mv.category))"></span>
                       <span x-text="(mv.type==='income' ? '+ ' : '− ') + formatMoney(mv.amount)" class="font-semibold"></span>
-                      <span class="text-navy-400" x-text="mv.type==='income' ? ('a ' + mv.account) : (mv.category + ' · ' + mv.account)"></span>
+                      <span class="text-navy-400" x-text="mv.type==='income' ? ('a ' + mv.account) : (mv.type==='debt_payment' ? ('pago a ' + mv.account) : (mv.category + ' · ' + mv.account + (mv.isCredit ? ' (a crédito)' : '')))"></span>
                     </div>
                   </template>
                 </div>
@@ -511,13 +571,13 @@
         <template x-for="t in [...transactions].reverse()" :key="t.id">
           <div class="px-4 py-3 flex items-center justify-between text-sm">
             <div class="flex items-center gap-3">
-              <span x-text="t.type==='income' ? '⬆️' : categoryIcon(t.category)"></span>
+              <span x-text="t.type==='income' ? '⬆️' : (t.type==='debt_payment' ? '💳' : categoryIcon(t.category))"></span>
               <div>
                 <p class="font-medium" x-text="t.desc"></p>
-                <p class="text-xs text-navy-400" x-text="t.date + ' ' + (t.time||'') + ' · ' + t.account + (t.type==='expense' ? (' · ' + t.category) : '')"></p>
+                <p class="text-xs text-navy-400" x-text="t.date + ' ' + (t.time||'') + ' · ' + (t.type==='debt_payment' ? ('pago a ' + t.cardName + ' desde ' + t.account) : t.account) + (t.type==='expense' ? (' · ' + t.category + (t.isCredit ? ' · crédito' : '')) : '')"></p>
               </div>
             </div>
-            <span class="font-semibold stat-number" :class="t.type==='income' ? 'text-navy-600' : 'text-clay-500'" x-text="(t.type==='income'?'+ ':'− ') + formatMoney(t.amount)"></span>
+            <span class="font-semibold stat-number" :class="t.type==='income' ? 'text-navy-600' : (t.type==='debt_payment' ? 'text-navy-600' : 'text-clay-500')" x-text="(t.type==='income'?'+ ':'− ') + formatMoney(t.amount)"></span>
           </div>
         </template>
         <p x-show="transactions.length===0" class="px-4 py-6 text-center text-sm text-navy-400">Aún no hay movimientos registrados. Ve al chat para empezar.</p>
@@ -616,6 +676,7 @@ function app(){
     lastBatch: null,
 
     showAddAccount:false, newAccName:'', newAccAmount:null,
+    showAddCard:false, newCardName:'', newCardLimit:null, newCardDebt:null,
     showAddPending:false, newPendingName:'', newPendingAmount:null,
     showAddGoal:false, newGoalName:'', newGoalAmount:null,
 
@@ -683,17 +744,19 @@ function app(){
         this.hasExistingData = true;
       } else {
         this.accounts = [
-          {id: uid(), name:'Cuenta Banorte', amount:0, icon:'🏦'},
-          {id: uid(), name:'Cuenta Klar', amount:0, icon:'💳'},
-          {id: uid(), name:'Efectivo en cartera', amount:0, icon:'💵'},
-          {id: uid(), name:'Alcancía', amount:0, icon:'🐷'},
-          {id: uid(), name:'Dinero que me deben', amount:0, icon:'🤝'},
+          {id: uid(), name:'Cuenta Banorte', amount:0, icon:'🏦', type:'cash'},
+          {id: uid(), name:'Cuenta Klar', amount:0, icon:'💳', type:'cash'},
+          {id: uid(), name:'Efectivo en cartera', amount:0, icon:'💵', type:'cash'},
+          {id: uid(), name:'Alcancía', amount:0, icon:'🐷', type:'cash'},
+          {id: uid(), name:'Dinero que me deben', amount:0, icon:'🤝', type:'cash'},
         ];
         this.goals = [
           {id: uid(), name:'Fondo de tranquilidad', amount:0},
         ];
         this.hasExistingData = false;
       }
+      // Migración: cualquier casilla previa sin "type" se trata como cuenta de efectivo normal
+      this.accounts.forEach(a=>{ if(!a.type) a.type = 'cash'; });
       this.categories.forEach(c=>{
         if(this.budgets[c.name] === undefined) this.budgets[c.name] = 0;
       });
@@ -777,10 +840,30 @@ function app(){
     },
 
     // ---------- computed ----------
-    totalMoney(){ return this.accounts.reduce((s,a)=> s + (Number(a.amount)||0), 0); },
+    totalMoney(){ return this.accounts.filter(a=>a.type!=='credit').reduce((s,a)=> s + (Number(a.amount)||0), 0); },
     totalPending(){ return this.pendings.reduce((s,p)=> s + (Number(p.amount)||0), 0); },
     totalGoals(){ return this.goals.reduce((s,g)=> s + (Number(g.amount)||0), 0); },
-    dineroReal(){ return this.totalMoney() - this.totalPending() - this.totalGoals(); },
+
+    // ---------- tarjetas de crédito (saldo negativo / pasivo) ----------
+    creditCards(){ return this.accounts.filter(a=>a.type==='credit'); },
+    totalDebt(){ return this.creditCards().reduce((s,c)=> s + (Number(c.debt)||0), 0); },
+    totalCreditLimit(){ return this.creditCards().reduce((s,c)=> s + (Number(c.limit)||0), 0); },
+    totalCreditAvailable(){ return this.creditCards().reduce((s,c)=> s + this.cardAvailable(c), 0); },
+    cardAvailable(c){ return Math.max(0, (Number(c.limit)||0) - (Number(c.debt)||0)); },
+    cardUtilization(c){
+      const limit = Number(c.limit)||0;
+      if(limit<=0) return (Number(c.debt)||0) > 0 ? 100 : 0;
+      return Math.min(100, ((Number(c.debt)||0) / limit) * 100);
+    },
+    cardAlertLevel(c){
+      const pct = this.cardUtilization(c);
+      if(pct >= 80) return 'red';
+      if(pct >= 50) return 'yellow';
+      return 'green';
+    },
+
+    // El crédito disponible de una tarjeta NUNCA se suma aquí: no es dinero real del usuario.
+    dineroReal(){ return this.totalMoney() - this.totalPending() - this.totalGoals() - this.totalDebt(); },
 
     essentialBudgetTotal(){
       return this.categories.filter(c=>c.type==='essential').reduce((s,c)=> s + (Number(this.budgets[c.name])||0), 0);
@@ -788,7 +871,8 @@ function app(){
     mesesLibertad(){
       const basicos = this.essentialBudgetTotal();
       if(!basicos) return null;
-      const liquido = this.totalMoney() + this.totalGoals();
+      // Activos líquidos reales: cuentas + metas, menos la deuda activa de tarjetas de crédito.
+      const liquido = this.totalMoney() + this.totalGoals() - this.totalDebt();
       return liquido / basicos;
     },
     libertadPct(){
@@ -825,6 +909,16 @@ function app(){
       this.save();
     },
     removeAccount(id){ this.accounts = this.accounts.filter(a=>a.id!==id); this.save(); },
+
+    addCard(){
+      if(!this.newCardName || !this.newCardLimit) return;
+      this.accounts.push({
+        id: uid(), name:this.newCardName, type:'credit', icon:'💳',
+        limit: Number(this.newCardLimit)||0, debt: Number(this.newCardDebt)||0
+      });
+      this.newCardName=''; this.newCardLimit=null; this.newCardDebt=null; this.showAddCard=false;
+      this.save();
+    },
 
     addPending(){
       if(!this.newPendingName || !this.newPendingAmount) return;
@@ -897,6 +991,7 @@ function app(){
     parseText(raw){
       const text = raw.toLowerCase();
       const incomeWords = ['me pagaron','pagaron','recibi','recibí','deposito','depósito','cobre','cobré','gane','gané','ingreso','sueldo','nomina','nómina','venta','vendi','vendí','deposit'];
+      const paymentWords = ['pague mi tarjeta','pagué mi tarjeta','pague la tarjeta','pagué la tarjeta','abone a mi tarjeta','aboné a mi tarjeta','abone mi tarjeta','aboné mi tarjeta','pago a mi tarjeta','pago mi tarjeta','liquide mi tarjeta','liquidé mi tarjeta','liquide la tarjeta','liquidé la tarjeta'];
       const expenseWords = ['gaste','gasté','pague','pagué','compre','compré','gasto','se me fue','perdi','perdí'];
       const categoryMap = {
         'Alimentación': ['comida','restaurante','restaurant','super','mercado','antojo','cafe','café','desayuno','almuerzo','cena','tacos','pizza','food'],
@@ -923,12 +1018,18 @@ function app(){
 
         let type = null;
         if(incomeWords.some(w=>seg.includes(w))) type = 'income';
+        else if(paymentWords.some(w=>seg.includes(w))) type = 'debt_payment';
         else if(expenseWords.some(w=>seg.includes(w))) type = 'expense';
         else type = lastType || 'expense';
         lastType = type;
 
+        const mentionsCard = /tarjeta|cr[eé]dito/.test(seg);
+        const creditAccs = this.accounts.filter(a=>a.type==='credit');
+        const cashAccs = this.accounts.filter(a=>a.type!=='credit');
+        const pool = (mentionsCard || type==='debt_payment') ? [...creditAccs, ...cashAccs] : [...cashAccs, ...creditAccs];
+
         let account = null;
-        for(const acc of this.accounts){
+        for(const acc of pool){
           const nameLower = acc.name.toLowerCase();
           const shortName = nameLower.split(' ').pop();
           if(seg.includes(nameLower) || (shortName.length>3 && seg.includes(shortName))){
@@ -939,6 +1040,7 @@ function app(){
           if(seg.includes('efectivo') || seg.includes('cartera')) account = this.accounts.find(a=>/efectivo|cartera/i.test(a.name))?.name;
           else if(seg.includes('alcanc')) account = this.accounts.find(a=>/alcanc/i.test(a.name))?.name;
         }
+        if(!account && type==='debt_payment' && creditAccs.length) account = creditAccs[0].name;
         if(!account) account = this.accounts[0] ? this.accounts[0].name : 'Efectivo';
 
         let category = 'Otros';
@@ -948,24 +1050,64 @@ function app(){
           }
         }
 
-        movements.push({
+        const mv = {
           id: uid(), type, amount, account, category,
           desc: seg.charAt(0).toUpperCase()+seg.slice(1),
           date: new Date().toISOString().slice(0,10)
-        });
+        };
+
+        if(type === 'debt_payment'){
+          let funding = null;
+          for(const acc of cashAccs){
+            const nameLower = acc.name.toLowerCase();
+            const shortName = nameLower.split(' ').pop();
+            if(acc.name !== account && (seg.includes(nameLower) || (shortName.length>3 && seg.includes(shortName)))){ funding = acc.name; break; }
+          }
+          if(!funding) funding = cashAccs[0] ? cashAccs[0].name : 'Efectivo';
+          mv.fundingAccount = funding;
+        }
+
+        movements.push(mv);
       });
 
       return movements;
     },
 
     applyMovement(mv){
+      const timeStr = this.nowTime();
+
+      // Pago de deuda: reduce la deuda de la tarjeta y sale el dinero de una cuenta de efectivo.
+      if(mv.type === 'debt_payment'){
+        const card = this.accounts.find(a=>a.name===mv.account && a.type==='credit');
+        const funding = this.accounts.find(a=>a.name===mv.fundingAccount);
+        if(card) card.debt = Math.max(0, (Number(card.debt)||0) - mv.amount);
+        if(funding) funding.amount = (Number(funding.amount)||0) - mv.amount;
+        this.transactions.push({
+          id: mv.id, date: mv.date, time: timeStr, type:'debt_payment', amount: mv.amount,
+          account: mv.fundingAccount, category:'', desc: mv.desc, cardName: mv.account
+        });
+        return;
+      }
+
       const acc = this.accounts.find(a=>a.name===mv.account);
+
+      // Gasto con tarjeta de crédito: lógica de saldo negativo — resta del crédito disponible
+      // (vía el límite fijo) y suma exactamente lo mismo a la deuda actual. No toca dinero real.
+      if(acc && acc.type==='credit' && mv.type==='expense'){
+        acc.debt = (Number(acc.debt)||0) + mv.amount;
+        this.transactions.push({
+          id: mv.id, date: mv.date, time: timeStr, type:'expense', amount: mv.amount,
+          account: mv.account, category: mv.category, desc: mv.desc, isCredit:true
+        });
+        return;
+      }
+
       if(acc){
         if(mv.type==='income') acc.amount = (Number(acc.amount)||0) + mv.amount;
         else acc.amount = (Number(acc.amount)||0) - mv.amount;
       }
       this.transactions.push({
-        id: mv.id, date: mv.date, time: this.nowTime(), type: mv.type, amount: mv.amount,
+        id: mv.id, date: mv.date, time: timeStr, type: mv.type, amount: mv.amount,
         account: mv.account, category: mv.type==='expense' ? mv.category : '', desc: mv.desc
       });
 
@@ -984,14 +1126,26 @@ function app(){
     undoLast(){
       if(!this.lastBatch) return;
       this.lastBatch.forEach(mv=>{
+        if(mv.type==='debt_payment'){
+          const card = this.accounts.find(a=>a.name===mv.account && a.type==='credit');
+          const funding = this.accounts.find(a=>a.name===mv.fundingAccount);
+          if(card) card.debt = (Number(card.debt)||0) + mv.amount;
+          if(funding) funding.amount = (Number(funding.amount)||0) + mv.amount;
+          this.transactions = this.transactions.filter(t=>t.id!==mv.id);
+          return;
+        }
         const acc = this.accounts.find(a=>a.name===mv.account);
         if(acc){
-          if(mv.type==='income') acc.amount -= mv.amount;
-          else acc.amount += mv.amount;
-          if(mv.autoCut){
-            acc.amount += mv.autoCut;
-            const g = this.goals.find(g=>g.name===this.autoGoalName);
-            if(g) g.amount -= mv.autoCut;
+          if(mv.isCredit){
+            acc.debt = Math.max(0, (Number(acc.debt)||0) - mv.amount);
+          } else {
+            if(mv.type==='income') acc.amount -= mv.amount;
+            else acc.amount += mv.amount;
+            if(mv.autoCut){
+              acc.amount += mv.autoCut;
+              const g = this.goals.find(g=>g.name===this.autoGoalName);
+              if(g) g.amount -= mv.autoCut;
+            }
           }
         }
         this.transactions = this.transactions.filter(t=>t.id!==mv.id);
@@ -1104,6 +1258,10 @@ function app(){
         ['Gasto aspiracional', gastoAspiracional],
         ['Ahorro neto', ahorroNeto],
         [],
+        ['— Snapshot de deuda activa (a la fecha de hoy, no del rango) —'],
+        ['Deuda total en tarjetas de crédito', this.totalDebt()],
+        ['Crédito disponible total (no es dinero real)', this.totalCreditAvailable()],
+        [],
         ['Generado el', new Date().toLocaleString('es-MX')]
       ];
 
@@ -1111,9 +1269,11 @@ function app(){
         ['Fecha','Hora','Tipo','Categoría','Cuenta','Monto','Descripción']
       ];
       filtered.forEach(t=>{
+        const tipoLabel = t.type==='income' ? 'Ingreso' : (t.type==='debt_payment' ? 'Pago de deuda' : (t.isCredit ? 'Gasto a crédito' : 'Gasto'));
+        const cuenta = t.type==='debt_payment' ? (t.account + ' → ' + t.cardName) : t.account;
         movimientosSheetData.push([
-          t.date, t.time || '', t.type==='income' ? 'Ingreso' : 'Gasto',
-          t.category || '-', t.account, Number(t.amount), t.desc
+          t.date, t.time || '', tipoLabel,
+          t.category || '-', cuenta, Number(t.amount), t.desc
         ]);
       });
 
