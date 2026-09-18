@@ -194,21 +194,38 @@
 
   <!-- Header -->
   <header class="px-5 pt-6 pb-4 md:px-8">
-    <div class="flex items-start justify-between">
+    <div class="flex items-start justify-between gap-2">
       <div>
         <p class="text-xs uppercase tracking-wide text-navy-500 font-semibold mb-1">Cofre</p>
         <h1 class="font-serif text-2xl md:text-3xl text-ink-900">Hola 👋, así va tu riqueza</h1>
       </div>
-      <button @click="showSettings=true" class="w-10 h-10 rounded-full card flex items-center justify-center text-lg hover:bg-navy-50">⚙️</button>
+      <div class="flex items-center gap-2 shrink-0 relative">
+        <button @click="showPeriodEditor = !showPeriodEditor" class="text-xs font-semibold text-navy-700 bg-white border border-navy-200 rounded-full px-3 py-2 hover:bg-navy-50 whitespace-nowrap">📅 <span x-text="periodLabel()"></span></button>
+        <button @click="showSettings=true" class="w-10 h-10 rounded-full card flex items-center justify-center text-lg hover:bg-navy-50">⚙️</button>
+
+        <div x-show="showPeriodEditor" x-cloak x-transition @click.outside="showPeriodEditor=false" class="absolute right-0 top-12 z-30 bg-white card p-4 w-72 shadow-lg">
+          <p class="text-sm font-semibold text-navy-800 mb-2">Tu periodo financiero</p>
+          <p class="text-xs text-navy-400 mb-3">Ajusta el ciclo que quieres analizar — no tiene que ser un mes calendario.</p>
+          <label class="text-xs text-navy-500 font-medium">Inicio</label>
+          <input type="date" x-model="periodStart" @change="save()" class="w-full border border-navy-200 rounded-lg px-3 py-2 text-sm mt-1 mb-3 focus:outline-none focus:border-navy-400">
+          <label class="text-xs text-navy-500 font-medium">Fin</label>
+          <input type="date" x-model="periodEnd" @change="save()" class="w-full border border-navy-200 rounded-lg px-3 py-2 text-sm mt-1 mb-4 focus:outline-none focus:border-navy-400">
+          <button @click="advancePeriod()" class="w-full bg-navy-800 text-white rounded-lg py-2 text-sm font-semibold hover:bg-navy-700">🔄 Reiniciar ciclo (avanzar al siguiente periodo)</button>
+          <p class="text-[11px] text-navy-400 mt-2">Tu historial no se borra: solo cambia la ventana de tiempo que ves en presupuestos y gráficas.</p>
+        </div>
+      </div>
     </div>
 
     <!-- Hero: dinero real disponible -->
     <div class="mt-5 card p-5 md:p-6 relative overflow-hidden">
       <div class="absolute -right-8 -top-8 w-32 h-32 rounded-full bg-navy-100 opacity-60"></div>
-      <p class="text-sm text-navy-600 font-medium relative">Dinero real para terminar el mes</p>
+      <p class="text-sm text-navy-600 font-medium relative">Dinero real para terminar el periodo</p>
       <p class="font-serif text-4xl md:text-5xl text-ink-900 mt-1 relative stat-number" x-text="formatMoney(dineroReal())"></p>
       <p class="text-xs text-navy-500 mt-2 relative">
         Sin contar <span class="font-semibold text-gold-600" x-text="formatMoney(totalGoals())"></span> guardado en metas intocables
+      </p>
+      <p class="text-xs mt-2 relative font-medium" :class="yesterdayBalance===null ? 'text-navy-400' : (dineroReal()>=yesterdayBalance ? 'text-navy-500' : 'text-clay-500')" x-show="yesterdayBalance!==null">
+        <span x-text="'Ayer tenías ' + formatMoney(yesterdayBalance) + '. '"></span><span x-text="dailyMotivation()"></span>
       </p>
     </div>
 
@@ -218,6 +235,18 @@
       <div class="flex items-center gap-2 shrink-0">
         <button @click="activeTab='chat'; showReminder=false" class="text-xs font-semibold text-navy-700 bg-white px-3 py-1.5 rounded-lg border border-navy-200 hover:bg-navy-50">Registrar</button>
         <button @click="showReminder=false" class="text-gold-500 hover:text-gold-700 text-sm px-1">✕</button>
+      </div>
+    </div>
+
+    <!-- Cuadro de disponibilidad -->
+    <div class="mt-3 grid grid-cols-2 gap-3">
+      <div class="card p-3.5 bg-gold-50 border-gold-100">
+        <p class="text-[11px] text-gold-700 font-semibold uppercase tracking-wide">🌱 Disponible para ahorro</p>
+        <p class="font-serif text-lg mt-0.5 text-gold-700 stat-number" x-text="formatMoney(disponibleParaAhorro())"></p>
+      </div>
+      <div class="card p-3.5">
+        <p class="text-[11px] text-navy-500 font-semibold uppercase tracking-wide">🛍️ Libre para gastar</p>
+        <p class="font-serif text-lg mt-0.5 text-navy-800 stat-number" x-text="formatMoney(libreParaGastar())"></p>
       </div>
     </div>
   </header>
@@ -352,6 +381,13 @@
                 :class="cardAlertLevel(c)==='red' ? 'bg-clay-500' : (cardAlertLevel(c)==='yellow' ? 'bg-gold-500' : 'bg-navy-400')"></div>
             </div>
             <p class="text-[11px] text-navy-400 mt-1.5">Crédito disponible: <span class="font-semibold text-navy-600" x-text="formatMoney(cardAvailable(c))"></span> · <span x-text="cardUtilization(c).toFixed(0) + '% usado'"></span></p>
+            <div class="flex items-center justify-between mt-2 pt-2 border-t border-clay-100">
+              <div class="flex items-center gap-1.5">
+                <label class="text-[11px] text-navy-500 font-medium">Fecha límite de pago</label>
+                <input type="date" x-model="c.dueDate" @change="save()" class="text-[11px] border border-navy-200 rounded-lg px-2 py-1 focus:outline-none focus:border-navy-400">
+              </div>
+              <span x-show="c.dueDate && daysToDue(c)!==null && daysToDue(c)<=5" x-cloak class="text-[11px] font-semibold px-2 py-1 rounded-full" :class="daysToDue(c)<0 ? 'bg-clay-100 text-clay-600' : 'bg-gold-100 text-gold-700'" x-text="daysToDue(c)<0 ? ('Venció hace ' + Math.abs(daysToDue(c)) + ' días') : ('Vence en ' + daysToDue(c) + ' días')"></span>
+            </div>
           </div>
         </template>
       </div>
@@ -361,9 +397,13 @@
           <input type="text" x-model="newCardName" placeholder="Nombre (ej. Tarjeta Banorte)" class="sm:col-span-2 border border-navy-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-navy-400">
           <input type="number" x-model.number="newCardLimit" placeholder="Límite de crédito" class="border border-navy-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-navy-400">
           <input type="number" x-model.number="newCardDebt" placeholder="Deuda actual (opcional)" class="border border-navy-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-navy-400">
+          <div class="sm:col-span-2">
+            <label class="text-[11px] text-navy-500 font-medium">Fecha límite de pago (opcional)</label>
+            <input type="date" x-model="newCardDueDate" class="w-full border border-navy-200 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none focus:border-navy-400">
+          </div>
           <div class="flex gap-2 sm:col-span-4">
             <button @click="addCard()" class="px-4 py-2 bg-clay-500 text-white rounded-lg text-sm font-semibold hover:bg-clay-600">Guardar tarjeta</button>
-            <button @click="showAddCard=false; newCardName=''; newCardLimit=null; newCardDebt=null" class="px-3 py-2 text-navy-400 text-sm">Cancelar</button>
+            <button @click="showAddCard=false; newCardName=''; newCardLimit=null; newCardDebt=null; newCardDueDate=''" class="px-3 py-2 text-navy-400 text-sm">Cancelar</button>
           </div>
         </div>
       </div>
@@ -437,6 +477,53 @@
       </div>
     </div>
 
+    <!-- Ingresos proyectados -->
+    <div>
+      <div class="flex items-center justify-between mb-1">
+        <h2 class="font-serif text-lg">Ingresos proyectados 📅</h2>
+      </div>
+      <p class="text-xs text-navy-500 mb-3">Simula si tu liquidez futura alcanzará para cubrir tus deudas y pendientes del periodo.</p>
+      <div class="grid sm:grid-cols-2 gap-3 mb-3">
+        <template x-for="p in projected" :key="p.id">
+          <div class="card p-4 flex items-center gap-3">
+            <span class="text-xl">📅</span>
+            <div class="flex-1 min-w-0">
+              <input type="text" x-model="p.desc" @change="save()" class="w-full text-sm font-semibold bg-transparent focus:outline-none rounded px-1 -mx-1">
+              <div class="flex items-center gap-2 mt-0.5">
+                <span class="text-navy-400 text-sm">$</span>
+                <input type="number" step="0.01" x-model.number="p.amount" @change="save()" class="w-24 amount-input text-base text-navy-700 bg-transparent focus:outline-none rounded px-1 -mx-1">
+                <input type="date" x-model="p.date" @change="save()" class="text-xs border border-navy-200 rounded-lg px-2 py-1 focus:outline-none focus:border-navy-400">
+              </div>
+            </div>
+            <button @click="removeProjected(p.id)" class="text-navy-300 hover:text-clay-500 text-sm shrink-0">✕</button>
+          </div>
+        </template>
+      </div>
+      <div class="mb-3">
+        <button x-show="!showAddProjected" @click="showAddProjected=true" class="w-full card border-dashed py-3 text-sm text-navy-500 hover:text-navy-700 hover:bg-navy-50 font-medium">+ Agregar ingreso proyectado</button>
+        <div x-show="showAddProjected" x-cloak class="card p-4 grid sm:grid-cols-4 gap-2">
+          <input type="text" x-model="newProjDesc" placeholder="Ej. Pago de nómina" class="sm:col-span-2 border border-navy-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-navy-400">
+          <input type="number" x-model.number="newProjAmount" placeholder="Monto" class="border border-navy-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-navy-400">
+          <input type="date" x-model="newProjDate" class="border border-navy-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-navy-400">
+          <div class="flex gap-2 sm:col-span-4">
+            <button @click="addProjected()" class="px-4 py-2 bg-navy-800 text-white rounded-lg text-sm font-semibold hover:bg-navy-700">Guardar</button>
+            <button @click="showAddProjected=false; newProjDesc=''; newProjAmount=null; newProjDate=''" class="px-3 py-2 text-navy-400 text-sm">Cancelar</button>
+          </div>
+        </div>
+      </div>
+      <div class="card p-4 bg-navy-50 border-navy-100">
+        <div class="flex items-center justify-between text-sm">
+          <span class="text-navy-500">Total proyectado</span>
+          <span class="font-semibold stat-number text-navy-700" x-text="formatMoney(totalProjected())"></span>
+        </div>
+        <div class="flex items-center justify-between text-sm mt-1">
+          <span class="text-navy-500">Disponible si todo llega</span>
+          <span class="font-semibold stat-number text-navy-800" x-text="formatMoney(dineroReal() + totalProjected())"></span>
+        </div>
+        <p class="text-xs mt-2" :class="liquidityCoversObligations() ? 'text-navy-500' : 'text-clay-500 font-medium'" x-text="liquidityCoversObligations() ? '✅ Con esto cubrirías tu deuda y pendientes del periodo.' : ('⚠️ Aún faltarían ' + formatMoney(obligationsGap()) + ' para cubrir tu deuda y pendientes.')"></p>
+      </div>
+    </div>
+
     <!-- Estrategia del clip -->
     <div class="card p-5 bg-navy-900 text-navy-50 relative overflow-hidden mb-2">
       <div class="absolute -right-10 -bottom-10 w-40 h-40 rounded-full bg-gold-500/10"></div>
@@ -454,14 +541,20 @@
       </div>
       <button @click="registerClipWin()" class="mt-3 w-full sm:w-auto px-5 py-2.5 bg-gold-500 text-navy-900 rounded-lg text-sm font-semibold hover:bg-gold-300 relative">Transferir victoria</button>
       <p x-show="clipFeedback" x-cloak x-text="clipFeedback" class="text-gold-300 text-sm mt-2 relative fade-in"></p>
-      <p class="text-xs text-navy-300 mt-3 relative">Llevas <span class="font-semibold text-gold-300" x-text="formatMoney(clipTotalThisMonth())"></span> evitados este mes en <span x-text="clipCountThisMonth()"></span> decisiones</p>
+      <p class="text-xs text-navy-300 mt-3 relative">Llevas <span class="font-semibold text-gold-300" x-text="formatMoney(clipTotalThisMonth())"></span> evitados este periodo en <span x-text="clipCountThisMonth()"></span> decisiones</p>
     </div>
   </section>
 
   <!-- ===================== TAB 2: CHAT ===================== -->
   <section x-show="activeTab==='chat'" x-cloak class="px-5 md:px-8 pt-6 fade-in">
-    <div class="card flex flex-col h-[70vh] md:h-[65vh] overflow-hidden">
 
+    <div class="flex gap-2 mb-3">
+      <button @click="chatMode='registro'" class="flex-1 py-2.5 rounded-xl text-sm font-semibold border" :class="chatMode==='registro' ? 'bg-navy-900 text-white border-navy-900' : 'border-navy-200 text-navy-500 bg-white'">💬 Registrar movimientos</button>
+      <button @click="chatMode='consejero'" class="flex-1 py-2.5 rounded-xl text-sm font-semibold border" :class="chatMode==='consejero' ? 'bg-gold-500 text-navy-900 border-gold-500' : 'border-navy-200 text-navy-500 bg-white'">🧠 ¿Es prudente este gasto?</button>
+    </div>
+
+    <!-- Panel: Registro de movimientos -->
+    <div class="card flex flex-col h-[65vh] md:h-[60vh] overflow-hidden" x-show="chatMode==='registro'" x-cloak>
       <div class="px-4 py-3 border-b border-navy-100 flex items-center justify-between">
         <div>
           <p class="font-serif text-lg">Cuéntame qué pasó con tu dinero</p>
@@ -496,6 +589,31 @@
         <button type="submit" class="w-11 h-11 rounded-xl bg-navy-800 text-white hover:bg-navy-700 flex items-center justify-center shrink-0">➤</button>
       </form>
     </div>
+
+    <!-- Panel: Consejero de decisiones -->
+    <div class="card flex flex-col h-[65vh] md:h-[60vh] overflow-hidden" x-show="chatMode==='consejero'" x-cloak>
+      <div class="px-4 py-3 border-b border-navy-100">
+        <p class="font-serif text-lg">Tu consejero antes de gastar</p>
+        <p class="text-xs text-navy-400">Ej. "Quiero cenar tacos por $150, ¿es prudente?" — analizo tus números reales, no solo tus ganas.</p>
+      </div>
+
+      <div class="flex-1 overflow-y-auto chat-scroll px-4 py-4 space-y-3" x-ref="advisorBox">
+        <template x-for="(m,i) in advisorMessages" :key="i">
+          <div class="flex" :class="m.from==='user' ? 'justify-end' : 'justify-start'">
+            <div class="max-w-[88%] px-4 py-3 text-sm" :class="m.from==='user' ? 'bubble-user' : 'bg-gold-50 border border-gold-100 text-navy-800 rounded-2xl rounded-bl-sm'">
+              <p x-show="m.verdict" class="text-sm font-semibold mb-1" x-text="m.verdict"></p>
+              <p x-text="m.text" class="whitespace-pre-line leading-relaxed"></p>
+            </div>
+          </div>
+        </template>
+        <p x-show="advisorMessages.length===0" class="text-center text-sm text-navy-400 mt-8">Pregúntame sobre un gasto antes de hacerlo. Reviso tu disponible, tus presupuestos y tu deuda activa antes de responder.</p>
+      </div>
+
+      <form @submit.prevent="sendAdvisorQuery()" class="border-t border-navy-100 p-3 flex gap-2">
+        <input type="text" x-model="advisorInput" placeholder="Ej. ¿Me conviene comprar unos tenis de 1800?" class="flex-1 border border-navy-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-navy-400">
+        <button type="submit" class="w-11 h-11 rounded-xl bg-gold-500 text-navy-900 hover:bg-gold-300 flex items-center justify-center shrink-0">🧠</button>
+      </form>
+    </div>
   </section>
 
   <!-- ===================== TAB 3: PRESUPUESTO ===================== -->
@@ -503,7 +621,7 @@
 
     <div class="card p-4 flex items-center justify-between">
       <div>
-        <h2 class="font-serif text-lg">Gastos del mes por categoría</h2>
+        <h2 class="font-serif text-lg">Gastos de este periodo por categoría</h2>
         <p class="text-xs text-navy-500">Verde va bien, amarillo cerca del límite (80%), rojo lo superaste (90%+).</p>
       </div>
       <span class="text-xs px-3 py-1.5 rounded-full font-semibold bg-clay-100 text-clay-600" x-show="categoriesInAlert()>0" x-text="categoriesInAlert() + ' en alerta'"></span>
@@ -513,7 +631,9 @@
       <template x-for="cat in categories" :key="cat.name">
         <div class="card p-4">
           <div class="flex items-center gap-3">
-            <canvas :id="'donut-' + cat.name" class="w-16 h-16 shrink-0"></canvas>
+            <div class="w-16 h-16 shrink-0 relative">
+              <canvas :id="'donut-' + catSlug(cat.name)"></canvas>
+            </div>
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-2 flex-wrap">
                 <span x-text="cat.icon"></span>
@@ -537,7 +657,7 @@
     <!-- Gráfica comparativa -->
     <div class="card p-4">
       <h2 class="font-serif text-lg mb-2">Comparativa: ¿en qué se va más tu dinero?</h2>
-      <div class="h-64">
+      <div class="h-64 relative">
         <canvas x-ref="chartCanvas"></canvas>
       </div>
     </div>
@@ -571,13 +691,13 @@
         <template x-for="t in [...transactions].reverse()" :key="t.id">
           <div class="px-4 py-3 flex items-center justify-between text-sm">
             <div class="flex items-center gap-3">
-              <span x-text="t.type==='income' ? '⬆️' : (t.type==='debt_payment' ? '💳' : categoryIcon(t.category))"></span>
+              <span x-text="t.type==='income' ? '⬆️' : (t.type==='debt_payment' ? '💳' : (t.type==='ahorro' ? '🌱' : categoryIcon(t.category)))"></span>
               <div>
                 <p class="font-medium" x-text="t.desc"></p>
                 <p class="text-xs text-navy-400" x-text="t.date + ' ' + (t.time||'') + ' · ' + (t.type==='debt_payment' ? ('pago a ' + t.cardName + ' desde ' + t.account) : t.account) + (t.type==='expense' ? (' · ' + t.category + (t.isCredit ? ' · crédito' : '')) : '')"></p>
               </div>
             </div>
-            <span class="font-semibold stat-number" :class="t.type==='income' ? 'text-navy-600' : (t.type==='debt_payment' ? 'text-navy-600' : 'text-clay-500')" x-text="(t.type==='income'?'+ ':'− ') + formatMoney(t.amount)"></span>
+            <span class="font-semibold stat-number" :class="(t.type==='income'||t.type==='ahorro') ? 'text-navy-600' : (t.type==='debt_payment' ? 'text-navy-600' : 'text-clay-500')" x-text="(t.type==='income'?'+ ':'− ') + formatMoney(t.amount)"></span>
           </div>
         </template>
         <p x-show="transactions.length===0" class="px-4 py-6 text-center text-sm text-navy-400">Aún no hay movimientos registrados. Ve al chat para empezar.</p>
@@ -674,9 +794,10 @@ function app(){
     chatMessages: [],
     chatInput: '',
     lastBatch: null,
+    chatMode: 'registro',
 
     showAddAccount:false, newAccName:'', newAccAmount:null,
-    showAddCard:false, newCardName:'', newCardLimit:null, newCardDebt:null,
+    showAddCard:false, newCardName:'', newCardLimit:null, newCardDebt:null, newCardDueDate:'',
     showAddPending:false, newPendingName:'', newPendingAmount:null,
     showAddGoal:false, newGoalName:'', newGoalAmount:null,
 
@@ -686,6 +807,20 @@ function app(){
     remindersOn:true, showReminder:false,
 
     reportStart:'', reportEnd:'', exportMsg:'',
+
+    // ---------- periodo financiero flexible ----------
+    periodStart:'', periodEnd:'', showPeriodEditor:false,
+
+    // ---------- ingresos proyectados ----------
+    projected: [],
+    showAddProjected:false, newProjDesc:'', newProjAmount:null, newProjDate:'',
+
+    // ---------- motivación dual (ayer vs hoy) ----------
+    yesterdayBalance: null,
+
+    // ---------- consejero de decisiones (sub-chat) ----------
+    advisorMessages: [],
+    advisorInput: '',
 
     // ---------- onboarding conductual ----------
     onboarded: false,
@@ -736,11 +871,15 @@ function app(){
         this.pin = data.pin || '';
         this.remindersOn = data.remindersOn !== undefined ? data.remindersOn : true;
         this.chatMessages = data.chatMessages || [];
+        this.advisorMessages = data.advisorMessages || [];
         this.onboarded = data.onboarded || false;
         this.implementationIntention = data.implementationIntention || '';
         this.autoWealthOn = data.autoWealthOn !== undefined ? data.autoWealthOn : true;
         this.wealthPercent = data.wealthPercent !== undefined ? data.wealthPercent : 20;
         this.clipWins = data.clipWins || [];
+        this.projected = data.projected || [];
+        this.periodStart = data.periodStart || '';
+        this.periodEnd = data.periodEnd || '';
         this.hasExistingData = true;
       } else {
         this.accounts = [
@@ -765,12 +904,24 @@ function app(){
       this.reportEnd = today.toISOString().slice(0,10);
       this.reportStart = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0,10);
 
+      // Periodo financiero flexible: por defecto, un ciclo de un mes desde hoy
+      if(!this.periodStart || !this.periodEnd){
+        const pStart = new Date(today);
+        const pEnd = new Date(today);
+        pEnd.setMonth(pEnd.getMonth()+1);
+        this.periodStart = pStart.toISOString().slice(0,10);
+        this.periodEnd = pEnd.toISOString().slice(0,10);
+      }
+
       if(this.pin){ this.locked = true; }
 
       const lastVisit = localStorage.getItem('cofre_last_visit');
       const todayStr = today.toDateString();
       if(this.remindersOn && lastVisit !== todayStr){ this.showReminder = true; }
       localStorage.setItem('cofre_last_visit', todayStr);
+
+      // Motivación dual: comparar el disponible de hoy contra el de ayer
+      this.initDailySnapshot(todayStr);
 
       if(this.chatMessages.length === 0){
         this.chatMessages.push({from:'system', text:'¡Hola! Cuéntame tus movimientos en tus propias palabras y yo los organizo por ti. Por ejemplo: "Me pagaron 1500 de la chamba de San Jorge a Klar".'});
@@ -780,14 +931,37 @@ function app(){
       this.$nextTick(()=>{ if(this.activeTab==='presupuesto') this.renderPresupuesto(); });
     },
 
+    initDailySnapshot(todayStr){
+      let cur = null;
+      try{ cur = JSON.parse(localStorage.getItem('cofre_snapshot_current') || 'null'); }catch(e){ cur = null; }
+      if(!cur || cur.date !== todayStr){
+        if(cur && cur.value !== undefined){
+          localStorage.setItem('cofre_snapshot_previous', String(cur.value));
+        }
+        cur = { date: todayStr, value: this.dineroReal() };
+        localStorage.setItem('cofre_snapshot_current', JSON.stringify(cur));
+      }
+      const prev = localStorage.getItem('cofre_snapshot_previous');
+      this.yesterdayBalance = (prev !== null && prev !== undefined && prev !== '') ? Number(prev) : null;
+    },
+    dailyMotivation(){
+      if(this.yesterdayBalance === null) return '';
+      const hoy = this.dineroReal();
+      if(hoy > this.yesterdayBalance) return '🌿 Vas mejor que ayer — cada peso que no gastas hoy es libertad futura.';
+      if(hoy < this.yesterdayBalance) return '💪 Ayer tenías más, pero las deudas se enfrentan con datos, no se esconden. Sigue registrando con honestidad.';
+      return '⚖️ Estás igual que ayer. La constancia, no la perfección, construye tu riqueza invisible.';
+    },
+
     save(){
       localStorage.setItem('cofre_data', JSON.stringify({
         accounts:this.accounts, pendings:this.pendings, goals:this.goals,
         transactions:this.transactions, budgets:this.budgets, pin:this.pin,
         remindersOn:this.remindersOn, chatMessages:this.chatMessages.slice(-60),
+        advisorMessages:this.advisorMessages.slice(-60),
         onboarded:this.onboarded, implementationIntention:this.implementationIntention,
         autoWealthOn:this.autoWealthOn, wealthPercent:this.wealthPercent,
-        clipWins:this.clipWins.slice(-200)
+        clipWins:this.clipWins.slice(-200),
+        projected:this.projected, periodStart:this.periodStart, periodEnd:this.periodEnd
       }));
       this.renderPresupuesto();
     },
@@ -865,6 +1039,40 @@ function app(){
     // El crédito disponible de una tarjeta NUNCA se suma aquí: no es dinero real del usuario.
     dineroReal(){ return this.totalMoney() - this.totalPending() - this.totalGoals() - this.totalDebt(); },
 
+    // ---------- periodo financiero flexible ----------
+    inPeriod(dateStr){
+      if(!this.periodStart || !this.periodEnd) return true;
+      const d = new Date(dateStr+'T12:00:00');
+      const s = new Date(this.periodStart+'T00:00:00');
+      const e = new Date(this.periodEnd+'T23:59:59');
+      return d >= s && d <= e;
+    },
+    periodLabel(){
+      if(!this.periodStart || !this.periodEnd) return 'Definir periodo';
+      const opts = {day:'numeric', month:'short'};
+      const s = new Date(this.periodStart+'T12:00:00').toLocaleDateString('es-MX', opts);
+      const e = new Date(this.periodEnd+'T12:00:00').toLocaleDateString('es-MX', opts);
+      return s + ' – ' + e;
+    },
+    advancePeriod(){
+      if(!this.periodStart || !this.periodEnd) return;
+      const oldStart = new Date(this.periodStart+'T00:00:00');
+      const oldEnd = new Date(this.periodEnd+'T00:00:00');
+      const lengthMs = Math.max(oldEnd - oldStart, 24*3600*1000);
+      const newStart = new Date(oldEnd.getTime() + 24*3600*1000);
+      const newEnd = new Date(newStart.getTime() + lengthMs);
+      this.periodStart = newStart.toISOString().slice(0,10);
+      this.periodEnd = newEnd.toISOString().slice(0,10);
+      this.showPeriodEditor = false;
+      this.save();
+    },
+    daysToDue(c){
+      if(!c.dueDate) return null;
+      const d = new Date(c.dueDate+'T00:00:00');
+      const now = new Date(); now.setHours(0,0,0,0);
+      return Math.ceil((d - now) / (24*3600*1000));
+    },
+
     essentialBudgetTotal(){
       return this.categories.filter(c=>c.type==='essential').reduce((s,c)=> s + (Number(this.budgets[c.name])||0), 0);
     },
@@ -882,9 +1090,13 @@ function app(){
     },
 
     categoryTotal(cat){
-      const now = new Date();
+      if(cat === 'Ahorro e Inversión'){
+        return this.transactions
+          .filter(t=> t.type==='ahorro' && this.inPeriod(t.date))
+          .reduce((s,t)=> s + Number(t.amount), 0);
+      }
       return this.transactions
-        .filter(t=> t.type==='expense' && t.category===cat && sameMonth(t.date, now))
+        .filter(t=> t.type==='expense' && t.category===cat && this.inPeriod(t.date))
         .reduce((s,t)=> s + Number(t.amount), 0);
     },
     budgetPct(cat){
@@ -901,6 +1113,35 @@ function app(){
       return this.categories.filter(c=>this.alertLevel(c.name)!=='green').length;
     },
 
+    // ---------- cuadro de disponibilidad (ahorro vs gasto libre) ----------
+    reservedEssential(){
+      return this.categories.filter(c=>c.type==='essential').reduce((s,c)=> s + Math.max(0, (Number(this.budgets[c.name])||0) - this.categoryTotal(c.name)), 0);
+    },
+    savingsRemaining(){
+      const budget = Number(this.budgets['Ahorro e Inversión'])||0;
+      return Math.max(0, budget - this.categoryTotal('Ahorro e Inversión'));
+    },
+    disponibleParaAhorro(){ return this.savingsRemaining(); },
+    libreParaGastar(){
+      return Math.max(0, this.dineroReal() - this.reservedEssential() - this.savingsRemaining());
+    },
+
+    // ---------- ingresos proyectados / proyección de liquidez ----------
+    totalProjected(){ return this.projected.reduce((s,p)=> s + (Number(p.amount)||0), 0); },
+    obligationsGap(){
+      const disponibleProyectado = this.dineroReal() + this.totalProjected();
+      const obligaciones = this.totalPending();
+      return Math.max(0, obligaciones - disponibleProyectado);
+    },
+    liquidityCoversObligations(){ return this.obligationsGap() <= 0; },
+    addProjected(){
+      if(!this.newProjDesc || !this.newProjAmount) return;
+      this.projected.push({id:uid(), desc:this.newProjDesc, amount:Number(this.newProjAmount), date:this.newProjDate || this.periodEnd});
+      this.newProjDesc=''; this.newProjAmount=null; this.newProjDate=''; this.showAddProjected=false;
+      this.save();
+    },
+    removeProjected(id){ this.projected = this.projected.filter(p=>p.id!==id); this.save(); },
+
     // ---------- accounts / pendings / goals CRUD ----------
     addAccount(){
       if(!this.newAccName || !this.newAccAmount) return;
@@ -914,9 +1155,10 @@ function app(){
       if(!this.newCardName || !this.newCardLimit) return;
       this.accounts.push({
         id: uid(), name:this.newCardName, type:'credit', icon:'💳',
-        limit: Number(this.newCardLimit)||0, debt: Number(this.newCardDebt)||0
+        limit: Number(this.newCardLimit)||0, debt: Number(this.newCardDebt)||0,
+        dueDate: this.newCardDueDate || ''
       });
-      this.newCardName=''; this.newCardLimit=null; this.newCardDebt=null; this.showAddCard=false;
+      this.newCardName=''; this.newCardLimit=null; this.newCardDebt=null; this.newCardDueDate=''; this.showAddCard=false;
       this.save();
     },
 
@@ -953,12 +1195,10 @@ function app(){
       setTimeout(()=>{ this.clipFeedback=''; }, 3000);
     },
     clipTotalThisMonth(){
-      const now = new Date();
-      return this.clipWins.filter(w=>sameMonth(w.date, now)).reduce((s,w)=>s+Number(w.amount),0);
+      return this.clipWins.filter(w=>this.inPeriod(w.date)).reduce((s,w)=>s+Number(w.amount),0);
     },
     clipCountThisMonth(){
-      const now = new Date();
-      return this.clipWins.filter(w=>sameMonth(w.date, now)).length;
+      return this.clipWins.filter(w=>this.inPeriod(w.date)).length;
     },
 
     // ---------- chat / NLP ----------
@@ -980,12 +1220,28 @@ function app(){
           const total = autoMoves.reduce((s,m)=>s+m.autoCut,0);
           this.chatMessages.push({from:'auto', text:`🏛️ Regla de Babilonia: separé ${this.formatMoney(total)} (${this.wealthPercent}%) hacia "${this.autoGoalName}" antes de que lo vieras como disponible.`});
         }
+        this.chatMessages.push({from:'system', text:`🌱 Disponible para ahorro: ${this.formatMoney(this.disponibleParaAhorro())} · 🛍️ Libre para gastar: ${this.formatMoney(this.libreParaGastar())}`});
       }
       this.save();
       this.$nextTick(()=>{
         const box = this.$refs.chatBox;
         if(box) box.scrollTop = box.scrollHeight;
       });
+    },
+
+    // Extrae el monto correcto de un fragmento de texto, priorizando señales de moneda
+    // explícitas ($ o "pesos") sobre cantidades sueltas (ej. "3 chocolates de 45 pesos" → 45).
+    extractAmount(seg){
+      let m = seg.match(/\$\s*(\d[\d,]*\.?\d*)/);
+      if(m) return parseFloat(m[1].replace(/,/g,''));
+      m = seg.match(/(\d[\d,]*\.?\d*)\s*(pesos?|mxn|d[oó]lares|usd)\b/);
+      if(m) return parseFloat(m[1].replace(/,/g,''));
+      m = seg.match(/por\s+\$?\s*(\d[\d,]*\.?\d*)/);
+      if(m) return parseFloat(m[1].replace(/,/g,''));
+      const all = [...seg.matchAll(/\d[\d,]*\.?\d*/g)].map(a=>parseFloat(a[0].replace(/,/g,'')));
+      if(all.length===0) return null;
+      if(all.length===1) return all[0];
+      return Math.max(...all);
     },
 
     parseText(raw){
@@ -1011,9 +1267,13 @@ function app(){
       const movements = [];
 
       segments.forEach(seg=>{
-        const numMatch = seg.match(/\d[\d,]*\.?\d*/);
-        if(!numMatch) return;
-        const amount = parseFloat(numMatch[0].replace(/,/g,''));
+        const hasVerb = incomeWords.some(w=>seg.includes(w)) || paymentWords.some(w=>seg.includes(w)) || expenseWords.some(w=>seg.includes(w));
+        const hasCurrency = /\$|\bpesos?\b|\bmxn\b|\bd[oó]lares\b|\busd\b/.test(seg);
+        // Filtro anti-ruido: un número suelto sin verbo financiero ni signo de moneda
+        // (ej. "3 chocolates" como mensaje aislado) no se interpreta como un movimiento.
+        if(!hasVerb && !hasCurrency && lastType===null) return;
+
+        const amount = this.extractAmount(seg);
         if(!amount || amount <= 0) return;
 
         let type = null;
@@ -1119,6 +1379,11 @@ function app(){
           if(!wealthGoal){ wealthGoal = {id:uid(), name:this.autoGoalName, amount:0}; this.goals.push(wealthGoal); }
           wealthGoal.amount = (Number(wealthGoal.amount)||0) + cut;
           mv.autoCut = cut;
+          mv.autoCutId = uid();
+          this.transactions.push({
+            id: mv.autoCutId, date: mv.date, time: timeStr, type:'ahorro', amount: cut,
+            account: wealthGoal.name, category:'Ahorro e Inversión', desc:'Riqueza invisible automática (' + this.wealthPercent + '%)'
+          });
         }
       }
     },
@@ -1145,6 +1410,7 @@ function app(){
               acc.amount += mv.autoCut;
               const g = this.goals.find(g=>g.name===this.autoGoalName);
               if(g) g.amount -= mv.autoCut;
+              if(mv.autoCutId) this.transactions = this.transactions.filter(t=>t.id!==mv.autoCutId);
             }
           }
         }
@@ -1153,6 +1419,107 @@ function app(){
       this.chatMessages.push({from:'system', text:'Deshice el último movimiento registrado.'});
       this.lastBatch = null;
       this.save();
+    },
+
+    // ---------- consejero de decisiones (economía conductual aplicada a datos reales) ----------
+    sendAdvisorQuery(){
+      const text = this.advisorInput.trim();
+      if(!text) return;
+      this.advisorMessages.push({from:'user', text});
+      this.advisorInput = '';
+
+      const result = this.analyzeDecision(text);
+      this.advisorMessages.push({from:'system', text: result.text, verdict: result.verdict});
+      this.save();
+      this.$nextTick(()=>{
+        const box = this.$refs.advisorBox;
+        if(box) box.scrollTop = box.scrollHeight;
+      });
+    },
+
+    analyzeDecision(raw){
+      const seg = raw.toLowerCase();
+      const amount = this.extractAmount(seg);
+      if(!amount || amount<=0){
+        return { verdict:'🤔 Necesito un monto', text:'Cuéntame cuánto costaría — por ejemplo: "Quiero cenar tacos por 150, ¿es prudente?"' };
+      }
+
+      const categoryMap = {
+        'Alimentación': ['comida','restaurante','restaurant','super','mercado','antojo','cafe','café','desayuno','almuerzo','cena','tacos','pizza'],
+        'Transporte': ['uber','didi','gasolina','transporte','camion','camión','taxi','pasaje','metro'],
+        'Servicios y Seguros': ['recibo','luz','agua','internet','telefono','teléfono','celular','seguro','servicio'],
+        'Vivienda': ['renta','hipoteca','mantenimiento','depa','departamento','predial'],
+        'Gasto Aspiracional': ['cine','pelicula','película','salida','fiesta','boleto','concierto','streaming','antro','bar','ropa','tenis','marca','lujo','maquillaje','gadget'],
+      };
+      let category = 'Gasto Aspiracional';
+      for(const [cat, words] of Object.entries(categoryMap)){
+        if(words.some(w=>seg.includes(w))){ category = cat; break; }
+      }
+      const type = this.typeOf(category);
+
+      const libre = this.libreParaGastar();
+      const disponible = this.dineroReal();
+      const pctDeLibre = libre>0 ? (amount/libre)*100 : 100;
+      const catBudget = Number(this.budgets[category])||0;
+      const catSpent = this.categoryTotal(category);
+      const catPctAfter = catBudget>0 ? ((catSpent+amount)/catBudget)*100 : null;
+      const debt = this.totalDebt();
+
+      const razones = [];
+      let score = 0; // negativo = precaución, positivo = adelante
+
+      if(amount > libre){
+        razones.push('Este gasto es mayor que tu dinero verdaderamente libre para gastar (' + this.formatMoney(libre) + '), no solo tu saldo en cuentas.');
+        score -= 2;
+      } else if(pctDeLibre >= 40){
+        razones.push('Se llevaría el ' + pctDeLibre.toFixed(0) + '% de tu dinero libre para gastar este periodo — es una porción grande de una sola vez.');
+        score -= 1;
+      } else {
+        razones.push('Representa solo el ' + pctDeLibre.toFixed(0) + '% de tu dinero libre para gastar: en tamaño, es manejable.');
+        score += 1;
+      }
+
+      if(catPctAfter !== null){
+        if(catPctAfter >= 100){
+          razones.push('Con este gasto superarías tu presupuesto de "' + category + '" de este periodo.');
+          score -= 2;
+        } else if(catPctAfter >= 80){
+          razones.push('Con este gasto llegarías al ' + catPctAfter.toFixed(0) + '% de tu presupuesto de "' + category + '" — zona de cautela.');
+          score -= 1;
+        }
+      }
+
+      if(debt > 0 && type==='aspirational'){
+        razones.push('Dave Ramsey sería directo: tienes ' + this.formatMoney(debt) + ' en deuda de tarjetas. Cada peso aquí es un peso que no fue a pagarla.');
+        score -= 1;
+      }
+
+      if(type==='aspirational'){
+        razones.push('Morgan Housel recuerda que la riqueza real es la que no se ve: el gasto que se nota (ropa, salidas, estatus) rara vez construye libertad futura.');
+      } else if(type==='essential'){
+        razones.push('Es un gasto operativo (no aspiracional): normalmente conviene priorizarlo sobre gastos de gusto.');
+        score += 1;
+      }
+
+      if(disponible < 0){
+        razones.push('Tu disponible real ya es negativo (' + this.formatMoney(disponible) + '). Richard Thaler diría que este es exactamente el momento en que más pesa el sesgo de "ya total, para lo que voy a gastar" — es la trampa.');
+        score -= 2;
+      }
+
+      let verdict, cierre;
+      if(score <= -2){
+        verdict = '🔴 Mejor no, todavía no';
+        cierre = 'Con tus números de hoy, este gasto te aleja de tu meses de libertad. Si de verdad lo quieres, dale un momento de espera (24 horas) antes de decidir.';
+      } else if(score < 0){
+        verdict = '🟡 Con cautela';
+        cierre = 'No es un error grave, pero hazlo con los ojos abiertos: sabes exactamente lo que cuesta en términos de tu libertad, no solo en pesos.';
+      } else {
+        verdict = '🟢 Adelante, con conciencia';
+        cierre = 'Tus números lo permiten. Disfrutarlo sin culpa también es parte de una relación sana con el dinero.';
+      }
+
+      const text = razones.join(' ') + '\n\n' + cierre;
+      return { verdict, text };
     },
 
     // ---------- PIN ----------
@@ -1184,9 +1551,12 @@ function app(){
     },
 
     // ---------- charts ----------
+    catSlug(name){ return name.toLowerCase().replace(/[^a-z0-9]+/g,'-'); },
     renderPresupuesto(){
-      this.renderChart();
-      this.renderDonuts();
+      this.$nextTick(()=>{
+        this.renderChart();
+        this.renderDonuts();
+      });
     },
     renderChart(){
       if(!this.$refs.chartCanvas) return;
@@ -1211,7 +1581,7 @@ function app(){
     },
     renderDonuts(){
       this.categories.forEach(cat=>{
-        const canvas = document.getElementById('donut-' + cat.name);
+        const canvas = document.getElementById('donut-' + this.catSlug(cat.name));
         if(!canvas) return;
         const spent = this.categoryTotal(cat.name);
         const budget = Number(this.budgets[cat.name]) || 0;
@@ -1224,7 +1594,7 @@ function app(){
           this.donutCharts[cat.name] = new Chart(canvas.getContext('2d'), {
             type:'doughnut',
             data:{ labels:['Gastado','Disponible'], datasets:[{ data, backgroundColor:colors, borderWidth:0 }] },
-            options:{ cutout:'72%', responsive:true, maintainAspectRatio:true, plugins:{ legend:{display:false}, tooltip:{ callbacks:{ label: ctx => this.formatMoney(ctx.raw) } } } }
+            options:{ cutout:'70%', responsive:true, maintainAspectRatio:false, plugins:{ legend:{display:false}, tooltip:{ callbacks:{ label: ctx => this.formatMoney(ctx.raw) } } } }
           });
         } else {
           const ch = this.donutCharts[cat.name];
@@ -1247,6 +1617,7 @@ function app(){
       const totalIngresos = filtered.filter(t=>t.type==='income').reduce((s,t)=>s+Number(t.amount),0);
       const gastosOperativos = filtered.filter(t=>t.type==='expense' && this.typeOf(t.category)==='essential').reduce((s,t)=>s+Number(t.amount),0);
       const gastoAspiracional = filtered.filter(t=>t.type==='expense' && this.typeOf(t.category)==='aspirational').reduce((s,t)=>s+Number(t.amount),0);
+      const ahorroAutomatico = filtered.filter(t=>t.type==='ahorro').reduce((s,t)=>s+Number(t.amount),0);
       const ahorroNeto = totalIngresos - gastosOperativos - gastoAspiracional;
 
       const resumenSheetData = [
@@ -1256,6 +1627,7 @@ function app(){
         ['Ingresos totales', totalIngresos],
         ['Gastos operativos (esenciales)', gastosOperativos],
         ['Gasto aspiracional', gastoAspiracional],
+        ['Ahorro automático transferido (riqueza invisible)', ahorroAutomatico],
         ['Ahorro neto', ahorroNeto],
         [],
         ['— Snapshot de deuda activa (a la fecha de hoy, no del rango) —'],
@@ -1269,7 +1641,7 @@ function app(){
         ['Fecha','Hora','Tipo','Categoría','Cuenta','Monto','Descripción']
       ];
       filtered.forEach(t=>{
-        const tipoLabel = t.type==='income' ? 'Ingreso' : (t.type==='debt_payment' ? 'Pago de deuda' : (t.isCredit ? 'Gasto a crédito' : 'Gasto'));
+        const tipoLabel = t.type==='income' ? 'Ingreso' : (t.type==='debt_payment' ? 'Pago de deuda' : (t.type==='ahorro' ? 'Ahorro' : (t.isCredit ? 'Gasto a crédito' : 'Gasto')));
         const cuenta = t.type==='debt_payment' ? (t.account + ' → ' + t.cardName) : t.account;
         movimientosSheetData.push([
           t.date, t.time || '', tipoLabel,
