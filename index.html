@@ -546,7 +546,7 @@
       </div>
 
       <form @submit.prevent="sendMessage()" class="border-t border-navy-100 p-3 flex gap-2">
-        <input type="text" x-model="chatInput" placeholder="Escribe tu movimiento…" class="flex-1 border border-navy-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-navy-400">
+        <input type="text" x-model="chatInput" placeholder="Escribe tu movimiento o comando…" :disabled="aiBusy" class="flex-1 border border-navy-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-navy-400">
         <button type="submit" class="w-11 h-11 rounded-xl bg-navy-800 text-white hover:bg-navy-700 flex items-center justify-center shrink-0">➤</button>
       </form>
     </div>
@@ -749,6 +749,17 @@
       </button>
     </div>
 
+    <div class="border border-navy-100 rounded-xl p-3 my-3 space-y-2">
+      <p class="text-sm font-semibold text-navy-800">🤖 Chat con IA (opcional)</p>
+      <p class="text-xs text-navy-500">Con una clave, el chat entiende lenguaje natural y puede modificar cuentas, deudas, tarjetas y presupuestos. Sin clave usa el modo local básico.</p>
+      <input type="password" x-model="aiKey" @change="save()" placeholder="Pega tu API Key de Google Gemini" class="w-full border border-navy-200 rounded-lg px-3 py-2 text-sm">
+      <ol class="text-xs text-navy-500 list-decimal pl-4 space-y-0.5">
+        <li>Entra a <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener" class="underline text-gold-700 font-semibold">aistudio.google.com/apikey</a> con tu cuenta Google.</li>
+        <li>Toca “Create API key” (es gratuita) y cópiala.</li>
+        <li>Pégala arriba. Se guarda solo en este dispositivo.</li>
+      </ol>
+      <button x-show="aiKey" @click="aiKey=''; save()" class="text-xs text-clay-500 underline">Quitar clave</button>
+    </div>
     <button @click="showSettings=false; showGuide=true" class="w-full text-center text-sm text-navy-600 py-3 font-medium hover:bg-navy-50 rounded-lg mt-1">📖 Ver guía rápida</button>
     <button @click="if(confirm('¿Borrar todos los datos de esta app? Esta acción no se puede deshacer.')) resetAll()" class="w-full text-center text-sm text-clay-500 py-3 font-medium hover:bg-clay-50 rounded-lg mt-1">Borrar todos los datos</button>
   </div>
@@ -823,6 +834,7 @@ function app(){
     showAddGoal:false, newGoalName:'', newGoalAmount:null,
     showAddProjected:false, newProjDesc:'', newProjAmount:null, newProjDate:'',
 
+    aiKey:'', aiModel:'gemini-2.0-flash', aiBusy:false,
     showSettings:false, showPeriodEditor:false,
     showGuide:false, guideDontShowAgain:true, hideGuide:false,
     pin:'', settingUpPin:false, newPin:'',
@@ -886,6 +898,8 @@ function app(){
         this.transactions = data.transactions || [];
         this.budgets = data.budgets || {};
         this.pin = data.pin || '';
+        this.aiKey = data.aiKey || '';
+        this.aiModel = data.aiModel || 'gemini-2.0-flash';
         this.remindersOn = data.remindersOn !== undefined ? data.remindersOn : true;
         this.chatMessages = data.chatMessages || [];
         this.adviceMessages = data.adviceMessages || [];
@@ -960,7 +974,7 @@ function app(){
         clipWins:this.clipWins.slice(-200),
         periodStart:this.periodStart, periodEnd:this.periodEnd,
         lastSnapshotDate:this.lastSnapshotDate, lastSnapshotTotal:this.lastSnapshotTotal,
-        hideGuide:this.hideGuide
+        hideGuide:this.hideGuide, aiKey:this.aiKey, aiModel:this.aiModel
       }));
       this.renderPresupuesto();
     },
@@ -1165,35 +1179,134 @@ function app(){
     },
 
     // ---------- chat / NLP ----------
-    sendMessage(){
+    async sendMessage(){
       const text = this.chatInput.trim();
-      if(!text) return;
+      if(!text || this.aiBusy) return;
       this.chatMessages.push({from:'user', text});
       this.chatInput = '';
-
-      const movements = this.parseText(text);
-      if(movements.length === 0){
-        this.chatMessages.push({from:'system', text:'No detecté un monto claro 🤔. Intenta algo como "Gasté 200 en comida" o "Me pagaron 800 a Klar".'});
-      } else {
-        movements.forEach(mv => this.applyMovement(mv));
-        this.lastBatch = movements;
-        this.chatMessages.push({from:'system', text:'Listo, registré esto:', movements});
-
-        const autoMoves = movements.filter(mv=>mv.autoCut);
-        if(autoMoves.length){
-          const total = autoMoves.reduce((s,m)=>s+m.autoCut,0);
-          this.chatMessages.push({from:'auto', text:`🏛️ Regla de Babilonia: separé ${this.formatMoney(total)} (${this.wealthPercent}%) hacia "${this.autoGoalName}" antes de que lo vieras como disponible.`});
-        }
-
-        const paraAhorro = Math.max(0, (Number(this.budgets['Ahorro e Inversión'])||0) - this.categoryTotal('Ahorro e Inversión'));
-        const paraGastar = Math.max(0, this.dineroReal() - paraAhorro);
-        this.chatMessages.push({from:'breakdown', text:`📐 Con esto: ${this.formatMoney(paraGastar)} libres para gastar y ${this.formatMoney(paraAhorro)} sugeridos para completar tu meta de ahorro de este periodo.`});
+      let actions = null;
+      if(this.aiKey){
+        this.aiBusy = true;
+        try{ actions = await this.askAI(text); }
+        catch(e){ this.chatMessages.push({from:'system', text:'⚠️ No pude usar la IA ('+(e.message||'error')+'). Uso el modo local.'}); }
+        this.aiBusy = false;
       }
+      if(!actions) actions = this.localActions(text);
+      this.runActions(actions);
       this.save();
-      this.$nextTick(()=>{
-        const box = this.$refs.chatBox;
-        if(box) box.scrollTop = box.scrollHeight;
+      this.$nextTick(()=>{ const box=this.$refs.chatBox; if(box) box.scrollTop=box.scrollHeight; });
+    },
+
+    snapshotForAI(){
+      return JSON.stringify({
+        cuentas:this.accounts.map(a=>({nombre:a.name,monto:a.amount})),
+        tarjetas:this.creditCards.map(c=>({nombre:c.name,limite:c.limit,deuda:c.debt})),
+        deudas:this.pendings.map(p=>({nombre:p.name,monto:p.amount})),
+        metas:this.goals.map(g=>({nombre:g.name,monto:g.amount})),
+        presupuestos:this.budgets
       });
+    },
+
+    async askAI(text){
+      const sys = `Eres el motor del chat de la app de finanzas "Cofre". Convierte el mensaje del usuario en acciones JSON. Responde SOLO JSON: {"reply":"texto breve en español","actions":[...]}.
+Acciones permitidas (usa nombres EXACTOS del estado cuando existan):
+{"op":"expense","amount":n,"account":"cuenta o tarjeta","category":"Alimentación|Transporte|Servicios y Seguros|Vivienda|Gasto Aspiracional|Ahorro e Inversión|Otros","desc":"..."}
+{"op":"income","amount":n,"account":"...","desc":"..."}
+{"op":"borrow","amount":n,"account":"cuenta que recibe","from":"quién prestó"}  (dinero prestado: suma al líquido y crea deuda)
+{"op":"pay_debt","name":"deuda o tarjeta","amount":n,"account":"cuenta de donde sale"}
+{"op":"set_account","name":"...","amount":n} {"op":"add_account","name":"...","amount":n} {"op":"rename_account","name":"...","new_name":"..."} {"op":"delete_account","name":"..."}
+{"op":"set_card","name":"...","limit":n,"debt":n} {"op":"add_card","name":"...","limit":n,"debt":n}
+{"op":"add_debt","name":"...","amount":n} {"op":"set_debt","name":"...","amount":n} {"op":"delete_debt","name":"..."}
+{"op":"set_budget","category":"...","amount":n}
+Reglas: nunca dupliques un monto; cantidades de artículos ("3 tacos de 20") se multiplican (60) y van en un solo gasto; sin cuenta indicada usa la primera cuenta; si no hay monto claro, devuelve actions [] y pide aclaración en reply. Estado actual: ${this.snapshotForAI()}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.aiModel}:generateContent?key=${encodeURIComponent(this.aiKey)}`;
+      const r = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+        systemInstruction:{parts:[{text:sys}]},
+        contents:[{role:'user',parts:[{text}]}],
+        generationConfig:{responseMimeType:'application/json',temperature:0.1}
+      })});
+      if(!r.ok) throw new Error('HTTP '+r.status+(r.status===400||r.status===403?' · revisa tu API Key':''));
+      const d = await r.json();
+      const raw = (d.candidates?.[0]?.content?.parts?.[0]?.text||'').replace(/```json|```/g,'').trim();
+      const j = JSON.parse(raw);
+      return {reply:j.reply||'', actions:Array.isArray(j.actions)?j.actions:[]};
+    },
+
+    // modo local: préstamos + comandos simples; si no, parser de movimientos
+    localActions(text){
+      const t = text.toLowerCase();
+      const loan = t.match(/(?:me prestaron|me prest[oó]|ped[ií] prestado|ped[ií] un pr[eé]stamo(?: de)?)\D{0,20}?(\d[\d,]*\.?\d*)/);
+      if(loan){
+        const amount = parseFloat(loan[1].replace(/,/g,''));
+        const who = (t.match(/(?:me prest[oó]|prestaron|de|a) ([a-záéíóúñ]+)\s*(?:\d|$)/)||[])[1];
+        return {reply:'', actions:[{op:'borrow',amount,account:this.accounts[0]?.name,from:who&&!/prestado|prestaron/.test(who)?who:'Préstamo'}]};
+      }
+      const setM = t.match(/(?:cambia|pon|actualiza|ajusta)\s+(?:mi\s+|el\s+|la\s+)?(?:saldo de\s+|cuenta\s+|deuda\s+(?:de\s+)?)?(.+?)\s+(?:a|en)\s+\$?(\d[\d,]*\.?\d*)/);
+      if(setM){
+        const name=setM[1].trim(), amount=parseFloat(setM[2].replace(/,/g,''));
+        const find=(arr)=>arr.find(x=>x.name.toLowerCase().includes(name)||name.includes(x.name.toLowerCase()));
+        if(find(this.accounts)) return {reply:'',actions:[{op:'set_account',name:find(this.accounts).name,amount}]};
+        if(find(this.pendings)) return {reply:'',actions:[{op:'set_debt',name:find(this.pendings).name,amount}]};
+        if(find(this.creditCards)) return {reply:'',actions:[{op:'set_card',name:find(this.creditCards).name,debt:amount}]};
+      }
+      const mvs = this.parseText(text);
+      return {reply:'', actions:mvs.map(m=>({op:m.type,amount:m.amount,account:m.account,category:m.category,desc:m.desc}))};
+    },
+
+    runActions(res){
+      const log=[], movements=[];
+      const n=v=>Math.max(0,Number(v)||0);
+      const findIn=(arr,name)=>{ const q=(name||'').toLowerCase(); return arr.find(x=>x.name.toLowerCase()===q)||arr.find(x=>q&&(x.name.toLowerCase().includes(q)||q.includes(x.name.toLowerCase()))); };
+      const acct=name=>findIn(this.accounts,name)||this.accounts[0];
+      const today=new Date().toISOString().slice(0,10);
+      (res.actions||[]).forEach(a=>{
+        const amount=n(a.amount);
+        switch(a.op){
+          case 'expense': case 'income': {
+            if(!amount) break;
+            const target=findIn(this.accounts,a.account)||findIn(this.creditCards,a.account)||this.accounts[0];
+            const mv={id:uid(),type:a.op,amount,account:target?target.name:'Efectivo',category:a.category||'Otros',desc:a.desc||a.op,date:today};
+            this.applyMovement(mv); movements.push(mv); break; }
+          case 'borrow': {
+            if(!amount) break;
+            const ac=acct(a.account); if(!ac) break;
+            ac.amount=(Number(ac.amount)||0)+amount;
+            this.pendings.push({id:uid(),name:'Préstamo'+(a.from?' — '+a.from:''),amount});
+            log.push(`🤝 Registré el préstamo: +${this.formatMoney(amount)} en "${ac.name}" y una deuda por ${this.formatMoney(amount)}. Tu liquidez subió, pero tu deuda también: no es dinero tuyo.`); break; }
+          case 'pay_debt': {
+            const d=findIn(this.pendings,a.name), c=findIn(this.creditCards,a.name), ac=acct(a.account);
+            if(!amount||!ac||!(d||c)) break;
+            ac.amount=(Number(ac.amount)||0)-amount;
+            if(d){ d.amount=Math.max(0,d.amount-amount); if(d.amount===0) this.pendings=this.pendings.filter(x=>x.id!==d.id); }
+            else c.debt=Math.max(0,(Number(c.debt)||0)-amount);
+            log.push(`✅ Pagaste ${this.formatMoney(amount)} a "${(d||c).name}" desde "${ac.name}".`); break; }
+          case 'set_account': { const ac=findIn(this.accounts,a.name); if(ac){ ac.amount=amount; log.push(`✏️ "${ac.name}" ahora tiene ${this.formatMoney(amount)}.`);} break; }
+          case 'add_account': this.accounts.push({id:uid(),name:a.name||'Cuenta',amount}); log.push(`➕ Cuenta "${a.name}" creada con ${this.formatMoney(amount)}.`); break;
+          case 'rename_account': { const ac=findIn(this.accounts,a.name); if(ac&&a.new_name){ ac.name=a.new_name; log.push(`✏️ Renombré la cuenta a "${a.new_name}".`);} break; }
+          case 'delete_account': { const ac=findIn(this.accounts,a.name); if(ac){ this.accounts=this.accounts.filter(x=>x.id!==ac.id); log.push(`🗑️ Eliminé la cuenta "${ac.name}".`);} break; }
+          case 'set_card': { const c=findIn(this.creditCards,a.name); if(c){ if(a.limit!==undefined) c.limit=n(a.limit); if(a.debt!==undefined) c.debt=n(a.debt); log.push(`💳 Actualicé "${c.name}": deuda ${this.formatMoney(c.debt)}, límite ${this.formatMoney(c.limit)}.`);} break; }
+          case 'add_card': this.creditCards.push({id:uid(),name:a.name||'Tarjeta',limit:n(a.limit),debt:n(a.debt),due:''}); log.push(`💳 Tarjeta "${a.name}" agregada.`); break;
+          case 'add_debt': this.pendings.push({id:uid(),name:a.name||'Deuda',amount}); log.push(`📌 Deuda "${a.name}" por ${this.formatMoney(amount)} registrada.`); break;
+          case 'set_debt': { const d=findIn(this.pendings,a.name); if(d){ d.amount=amount; log.push(`✏️ Deuda "${d.name}" ahora es ${this.formatMoney(amount)}.`);} break; }
+          case 'delete_debt': { const d=findIn(this.pendings,a.name); if(d){ this.pendings=this.pendings.filter(x=>x.id!==d.id); log.push(`🗑️ Eliminé la deuda "${d.name}".`);} break; }
+          case 'set_budget': if(a.category){ this.budgets[a.category]=amount; log.push(`🎯 Presupuesto de ${a.category}: ${this.formatMoney(amount)}.`);} break;
+        }
+      });
+      if(movements.length){
+        this.lastBatch=movements;
+        this.chatMessages.push({from:'system',text:'Listo, registré esto:',movements});
+        const cardUse=movements.filter(m=>m.paidWithCard);
+        cardUse.forEach(m=>{ const c=this.creditCards.find(x=>x.name===m.account); if(c) log.push(`💳 ${this.formatMoney(m.amount)} a "${c.name}": su deuda ahora es ${this.formatMoney(c.debt)} y te quedan ${this.formatMoney(Math.max(0,(Number(c.limit)||0)-(Number(c.debt)||0)))} de crédito (no cuenta como dinero tuyo).`); });
+        const total=movements.filter(m=>m.autoCut).reduce((x,m)=>x+m.autoCut,0);
+        if(total) this.chatMessages.push({from:'auto',text:`🏛️ Regla de Babilonia: separé ${this.formatMoney(total)} (${this.wealthPercent}%) hacia "${this.autoGoalName}".`});
+      }
+      log.forEach(t=>this.chatMessages.push({from:'auto',text:t}));
+      if(res.reply) this.chatMessages.push({from:'system',text:res.reply});
+      if(!movements.length&&!log.length&&!res.reply) this.chatMessages.push({from:'system',text:'No detecté un monto o comando claro 🤔. Prueba "Gasté 200 en comida con Banorte", "Me prestaron 500" o "Cambia Efectivo a 800".'});
+      else if(movements.length){
+        const paraAhorro=Math.max(0,(Number(this.budgets['Ahorro e Inversión'])||0)-this.categoryTotal('Ahorro e Inversión'));
+        this.chatMessages.push({from:'breakdown',text:`📐 Con esto: ${this.formatMoney(Math.max(0,this.dineroReal()-paraAhorro))} libres para gastar y ${this.formatMoney(paraAhorro)} sugeridos para tu meta de ahorro.`});
+      }
     },
 
     parseText(raw){
