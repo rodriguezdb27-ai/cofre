@@ -834,7 +834,7 @@ function app(){
     showAddGoal:false, newGoalName:'', newGoalAmount:null,
     showAddProjected:false, newProjDesc:'', newProjAmount:null, newProjDate:'',
 
-    aiKey:'', aiModel:'gemini-2.0-flash', aiBusy:false,
+    aiKey:'', aiModel:'', aiBusy:false,
     showSettings:false, showPeriodEditor:false,
     showGuide:false, guideDontShowAgain:true, hideGuide:false,
     pin:'', settingUpPin:false, newPin:'',
@@ -899,7 +899,7 @@ function app(){
         this.budgets = data.budgets || {};
         this.pin = data.pin || '';
         this.aiKey = data.aiKey || '';
-        this.aiModel = data.aiModel || 'gemini-2.0-flash';
+        this.aiModel = (data.aiModel && !/1\.5|2\.0/.test(data.aiModel)) ? data.aiModel : '';
         this.remindersOn = data.remindersOn !== undefined ? data.remindersOn : true;
         this.chatMessages = data.chatMessages || [];
         this.adviceMessages = data.adviceMessages || [];
@@ -1219,17 +1219,45 @@ Acciones permitidas (usa nombres EXACTOS del estado cuando existan):
 {"op":"add_debt","name":"...","amount":n} {"op":"set_debt","name":"...","amount":n} {"op":"delete_debt","name":"..."}
 {"op":"set_budget","category":"...","amount":n}
 Reglas: nunca dupliques un monto; cantidades de artículos ("3 tacos de 20") se multiplican (60) y van en un solo gasto; sin cuenta indicada usa la primera cuenta; si no hay monto claro, devuelve actions [] y pide aclaración en reply. Estado actual: ${this.snapshotForAI()}`;
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.aiModel}:generateContent?key=${encodeURIComponent(this.aiKey)}`;
-      const r = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      const key = (this.aiKey||'').trim();
+      const body = JSON.stringify({
         systemInstruction:{parts:[{text:sys}]},
         contents:[{role:'user',parts:[{text}]}],
         generationConfig:{responseMimeType:'application/json',temperature:0.1}
-      })});
-      if(!r.ok) throw new Error('HTTP '+r.status+(r.status===400||r.status===403?' · revisa tu API Key':''));
+      });
+      const call = async (model)=> fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+        {method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':key},body});
+      if(!this.aiModel) this.aiModel = await this.resolveGeminiModel(key);
+      let r = await call(this.aiModel);
+      if(r.status===404){            // modelo retirado: redescubrir uno vigente y reintentar una vez
+        this.aiModel = await this.resolveGeminiModel(key, this.aiModel);
+        r = await call(this.aiModel);
+      }
+      if(!r.ok){
+        let msg=''; try{ msg=(await r.json()).error?.message||''; }catch(_){}
+        const hint = (r.status===400&&/api key/i.test(msg))||r.status===403||r.status===401 ? ' · revisa tu API Key' : (r.status===429?' · límite gratuito alcanzado, espera un minuto':'');
+        throw new Error('HTTP '+r.status+hint);
+      }
+      this.save();
       const d = await r.json();
-      const raw = (d.candidates?.[0]?.content?.parts?.[0]?.text||'').replace(/```json|```/g,'').trim();
-      const j = JSON.parse(raw);
+      const raw = (d.candidates?.[0]?.content?.parts||[]).map(x=>x.text||'').join('').replace(/```json|```/g,'').trim();
+      let j; try{ j=JSON.parse(raw); }catch(_){ const m=raw.match(/\{[\s\S]*\}/); if(!m) throw new Error('respuesta no válida'); j=JSON.parse(m[0]); }
       return {reply:j.reply||'', actions:Array.isArray(j.actions)?j.actions:[]};
+    },
+
+    // Pregunta a Google qué modelos vigentes soportan generateContent y elige uno de texto rápido
+    async resolveGeminiModel(key, avoid){
+      const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200',{headers:{'x-goog-api-key':key}});
+      if(!r.ok) throw new Error('HTTP '+r.status+(r.status===400||r.status===403?' · revisa tu API Key':''));
+      const list = ((await r.json()).models||[])
+        .filter(m=>(m.supportedGenerationMethods||[]).includes('generateContent'))
+        .map(m=>m.name.replace(/^models\//,''))
+        .filter(n=>/^gemini-/.test(n) && n!==avoid && !/image|tts|live|audio|embedding|robotics|computer|exp|thinking|vision|preview-\d/.test(n));
+      const prefs=['gemini-3.5-flash','gemini-3.1-flash-lite','gemini-3.5-flash-lite','gemini-3-flash-preview','gemini-2.5-flash','gemini-2.5-flash-lite'];
+      for(const p of prefs) if(list.includes(p)) return p;
+      const any = list.find(n=>/flash/.test(n)) || list[0];
+      if(!any) throw new Error('sin modelos disponibles para tu clave');
+      return any;
     },
 
     // modo local: préstamos + comandos simples; si no, parser de movimientos
